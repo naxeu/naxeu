@@ -8,6 +8,13 @@
       "when": 1780561368818,
       "tag": "0000_lumpy_mindworm",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1780578737254,
+      "tag": "0001_worthless_kang",
+      "breakpoints": true
     }
   ]
 }

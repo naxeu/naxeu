@@ -8,6 +8,8 @@ import { toCents, fromCents } from "./money.js";
 export interface TxLike {
   id: string;
   parentId?: string | null;
+  accountId?: string | null;
+  counterAccountId?: string | null;
   categoryId?: string | null;
   type: TransactionType;
   status: string;
@@ -26,7 +28,10 @@ function isCounted(tx: TxLike): boolean {
 /**
  * Normalises the stored sign of an amount based on transaction type. Income and
  * refunds are positive (money in / money back), expenses/fees/items negative.
- * Transfers/corrections/splits keep the caller-provided sign.
+ *
+ * Transfers are stored negative on `account_id` (the source — money leaves it);
+ * the counterpart effect on `counter_account_id` is the opposite sign and is
+ * applied during balance computation. Corrections/splits keep the caller sign.
  */
 export function normalizeSignedAmount(type: TransactionType, amount: string): string {
   const cents = toCents(amount);
@@ -38,6 +43,7 @@ export function normalizeSignedAmount(type: TransactionType, amount: string): st
     case "expense":
     case "fee":
     case "item":
+    case "transfer":
       return fromCents(-magnitude);
     default:
       return fromCents(cents);
@@ -56,6 +62,31 @@ export function computeAccountBalanceDelta(txs: TxLike[]): string {
     .filter((t) => isCounted(t) && t.affectsAccountBalance)
     .reduce((sum, t) => sum + toCents(t.amount), 0);
   return fromCents(cents);
+}
+
+/**
+ * Computes the balance per account from a flat transaction list.
+ *
+ * Only `affectsAccountBalance` rows count. A transfer applies its signed amount
+ * to `account_id` (source) and the opposite amount to `counter_account_id`
+ * (destination), so paying a credit-card statement from the bank reduces the
+ * bank balance and raises the credit-card balance back toward zero — without
+ * being counted as a budget expense (transfers carry `affectsBudget = false`).
+ */
+export function computeAccountBalances(txs: TxLike[]): Record<string, string> {
+  const cents = new Map<string, number>();
+  const add = (accountId: string, delta: number) => {
+    cents.set(accountId, (cents.get(accountId) ?? 0) + delta);
+  };
+  for (const tx of txs) {
+    if (!isCounted(tx) || !tx.affectsAccountBalance) continue;
+    const amount = toCents(tx.amount);
+    if (tx.accountId) add(tx.accountId, amount);
+    if (tx.type === "transfer" && tx.counterAccountId) add(tx.counterAccountId, -amount);
+  }
+  const result: Record<string, string> = {};
+  for (const [accountId, value] of cents) result[accountId] = fromCents(value);
+  return result;
 }
 
 /**

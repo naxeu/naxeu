@@ -71,6 +71,8 @@ export type UpdateCategoryInput = z.infer<typeof updateCategorySchema>;
 export const createTransactionSchema = z.object({
   parentId: z.string().uuid().nullish(),
   accountId: z.string().uuid().nullish(),
+  // Destination account for transfers (source is accountId).
+  counterAccountId: z.string().uuid().nullish(),
   categoryId: z.string().uuid().nullish(),
   assignedToUserId: z.string().uuid().nullish(),
   type: TransactionType.schema.default("expense"),

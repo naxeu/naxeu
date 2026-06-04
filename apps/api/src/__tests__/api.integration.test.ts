@@ -169,6 +169,59 @@ describe("categories, transactions and budgets", () => {
   });
 });
 
+describe("credit card + transfer logic", () => {
+  function auth() {
+    return { authorization: `Bearer ${token}` };
+  }
+
+  it("credit-card purchase counts toward budget; statement payoff transfer does not, and balances reflect it", async () => {
+    const [bankRes, cardRes] = await Promise.all([
+      app.inject({ method: "POST", url: "/accounts", headers: auth(), payload: { name: "Bank", type: "bank" } }),
+      app.inject({ method: "POST", url: "/accounts", headers: auth(), payload: { name: "Card", type: "credit_card" } }),
+    ]);
+    const bankId = bankRes.json().account.id;
+    const cardId = cardRes.json().account.id;
+
+    const cat = await app.inject({
+      method: "POST",
+      url: "/categories",
+      headers: auth(),
+      payload: { name: "CC-Haushalt", type: "expense", monthlyBudget: "500" },
+    });
+    const catId = cat.json().category.id;
+
+    // A credit-card purchase (counts in the purchase month's budget).
+    await app.inject({
+      method: "POST",
+      url: "/transactions",
+      headers: auth(),
+      payload: { type: "expense", amount: "120", date: "2026-07-05", accountId: cardId, categoryId: catId, merchantName: "Amazon" },
+    });
+
+    // The statement payoff: a transfer bank -> card.
+    const transfer = await app.inject({
+      method: "POST",
+      url: "/transactions",
+      headers: auth(),
+      payload: { type: "transfer", amount: "120", date: "2026-07-28", accountId: bankId, counterAccountId: cardId },
+    });
+    expect(transfer.statusCode).toBe(201);
+    // Transfers are forced to not affect the budget, regardless of input.
+    expect(transfer.json().transaction.affectsBudget).toBe(false);
+
+    // Budget for July counts only the purchase (120), not the transfer.
+    const budget = await app.inject({ method: "GET", url: "/budgets/monthly?month=2026-07", headers: auth() });
+    const food = budget.json().categories.find((c: { categoryId: string }) => c.categoryId === catId);
+    expect(food.spent).toBe("120.00");
+
+    // Balances: bank down 120, card back to 0.
+    const accounts = await app.inject({ method: "GET", url: "/accounts", headers: auth() });
+    const list = accounts.json().accounts as Array<{ id: string; balance: string }>;
+    expect(list.find((a) => a.id === bankId)!.balance).toBe("-120.00");
+    expect(list.find((a) => a.id === cardId)!.balance).toBe("0.00");
+  });
+});
+
 describe("workspace isolation", () => {
   it("does not leak another workspace's transactions", async () => {
     // The community edition reuses a single workspace, so a second user joins

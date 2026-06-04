@@ -22,12 +22,16 @@ export async function createTransaction(
   opts: CreateTxOptions,
 ) {
   const amount = normalizeSignedAmount(input.type, input.amount);
+  // Transfers move money between accounts; they affect balances but never the
+  // budget (the spend was already counted on the purchase, e.g. on the card).
+  const affectsBudget = input.type === "transfer" ? false : input.affectsBudget;
   const [row] = await ctx.db
     .insert(transactions)
     .values({
       workspaceId: opts.workspaceId,
       parentId: input.parentId ?? null,
       accountId: input.accountId ?? null,
+      counterAccountId: input.counterAccountId ?? null,
       categoryId: input.categoryId ?? null,
       createdByUserId: opts.userId,
       assignedToUserId: input.assignedToUserId ?? null,
@@ -43,7 +47,7 @@ export async function createTransaction(
       notes: input.notes ?? null,
       source: input.source,
       affectsAccountBalance: input.affectsAccountBalance,
-      affectsBudget: input.affectsBudget,
+      affectsBudget,
       externalId: input.externalId ?? null,
       confidence: input.confidence != null ? String(input.confidence) : null,
       aiData: input.aiData ?? {},
@@ -87,6 +91,8 @@ export async function updateTransaction(
   if (input.amount !== undefined && input.type !== undefined) {
     patch.amount = normalizeSignedAmount(input.type, input.amount);
   }
+  // Keep transfer semantics consistent: transfers never affect the budget.
+  if (input.type === "transfer") patch.affectsBudget = false;
   const [row] = await ctx.db
     .update(transactions)
     .set(patch)

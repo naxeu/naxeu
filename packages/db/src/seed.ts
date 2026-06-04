@@ -155,6 +155,25 @@ export async function seed(url: string = databaseUrl()): Promise<void> {
       child(workspace!.id, user!.id, statement!.id, cat("Abos"), d, "-9.99", "Apple"),
     ]);
 
+    // Statement payoff: a transfer from the bank account to the credit card.
+    // It moves money between accounts (bank down, card back toward zero) and is
+    // NOT counted again in the budget (the spend was counted on the card).
+    await db.insert(transactions).values({
+      workspaceId: workspace!.id,
+      accountId: bank!.id,
+      counterAccountId: card!.id,
+      createdByUserId: user!.id,
+      type: "transfer",
+      status: "confirmed",
+      date: d,
+      amount: "-450.00",
+      merchantName: "Kreditkarten-Ausgleich",
+      description: "Abbuchung Kreditkartenabrechnung",
+      source: "manual",
+      affectsAccountBalance: true,
+      affectsBudget: false,
+    });
+
     console.log(`[seed] done. Demo login: ${DEMO_EMAIL} / ${DEMO_PASSWORD}`);
     void cash;
     void sql;

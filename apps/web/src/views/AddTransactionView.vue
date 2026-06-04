@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref } from "vue";
+import { computed, onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
 import { api } from "@/api/client";
 
@@ -25,10 +25,12 @@ const form = ref({
   description: "",
   categoryId: null as string | null,
   accountId: null as string | null,
+  counterAccountId: null as string | null,
   status: "confirmed",
 });
 
 const types = ["income", "expense", "transfer", "refund"];
+const isTransfer = computed(() => form.value.type === "transfer");
 
 onMounted(async () => {
   const [c, a] = await Promise.all([
@@ -73,8 +75,10 @@ async function save(): Promise<void> {
         date: form.value.date,
         merchantName: form.value.merchantName || null,
         description: form.value.description || null,
-        categoryId: form.value.categoryId,
+        // Transfers carry no budget category; they only move money.
+        categoryId: isTransfer.value ? null : form.value.categoryId,
         accountId: form.value.accountId,
+        counterAccountId: isTransfer.value ? form.value.counterAccountId : null,
         status: form.value.status,
       },
     });
@@ -132,7 +136,7 @@ async function save(): Promise<void> {
           <v-col cols="12" sm="6">
             <v-text-field v-model="form.merchantName" label="Händler" variant="outlined" />
           </v-col>
-          <v-col cols="12" sm="6">
+          <v-col v-if="!isTransfer" cols="12" sm="6">
             <v-select
               v-model="form.categoryId"
               :items="categories"
@@ -149,10 +153,27 @@ async function save(): Promise<void> {
               :items="accounts"
               item-title="name"
               item-value="id"
-              label="Konto"
+              :label="isTransfer ? 'Von Konto' : 'Konto'"
               variant="outlined"
               clearable
             />
+          </v-col>
+          <v-col v-if="isTransfer" cols="12" sm="6">
+            <v-select
+              v-model="form.counterAccountId"
+              :items="accounts"
+              item-title="name"
+              item-value="id"
+              label="Auf Konto (Gegenkonto)"
+              variant="outlined"
+              clearable
+            />
+          </v-col>
+          <v-col v-if="isTransfer" cols="12">
+            <v-alert type="info" variant="tonal" density="compact">
+              Umbuchung: beeinflusst die Kontostände, zählt aber nicht erneut fürs Budget
+              (z. B. Ausgleich einer Kreditkartenabrechnung vom Bankkonto).
+            </v-alert>
           </v-col>
           <v-col cols="12">
             <v-text-field v-model="form.description" label="Beschreibung" variant="outlined" />

@@ -1,6 +1,7 @@
 import { asc, eq } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
-import { accounts } from "@naxeu/db/schema";
+import { accounts, transactions } from "@naxeu/db/schema";
+import { computeAccountBalances } from "@naxeu/core";
 import { createAccountSchema } from "@naxeu/shared";
 
 export async function registerAccountRoutes(app: FastifyInstance): Promise<void> {
@@ -12,7 +13,29 @@ export async function registerAccountRoutes(app: FastifyInstance): Promise<void>
       .from(accounts)
       .where(eq(accounts.workspaceId, request.auth.workspaceId))
       .orderBy(asc(accounts.name));
-    return { accounts: rows };
+
+    // Derive each account's balance from all its transactions (transfers move
+    // money between the source account_id and the destination counter_account_id).
+    const txs = await db
+      .select()
+      .from(transactions)
+      .where(eq(transactions.workspaceId, request.auth.workspaceId));
+    const balances = computeAccountBalances(
+      txs.map((t) => ({
+        id: t.id,
+        accountId: t.accountId,
+        counterAccountId: t.counterAccountId,
+        type: t.type as never,
+        status: t.status,
+        amount: t.amount,
+        affectsAccountBalance: t.affectsAccountBalance,
+        affectsBudget: t.affectsBudget,
+      })),
+    );
+
+    return {
+      accounts: rows.map((a) => ({ ...a, balance: balances[a.id] ?? "0.00" })),
+    };
   });
 
   app.post("/accounts", { preHandler: app.authenticate }, async (request, reply) => {

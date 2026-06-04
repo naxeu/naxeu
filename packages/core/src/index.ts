@@ -5,6 +5,7 @@ export * from "./automation.js";
 export * from "./message-delivery.js";
 export * from "./password.js";
 export * from "./context.js";
+export * from "./senders.js";
 export * from "./events.js";
 export * from "./message-service.js";
 export * from "./transaction-service.js";

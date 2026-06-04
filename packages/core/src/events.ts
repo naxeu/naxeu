@@ -38,7 +38,10 @@ export async function emitEvent(db: Database, args: EmitEventArgs) {
  * row stays available for retry.
  */
 export async function claimPendingEvents(db: Database, limit = 20) {
-  const rows = await db.execute(sql`
+  // Raw SQL is needed for FOR UPDATE SKIP LOCKED. db.execute returns rows with
+  // the DB's snake_case column names, so we map them back to the camelCase
+  // EventRow shape that the rest of the code expects.
+  const rows = (await db.execute(sql`
     UPDATE events
     SET status = 'processing', attempts = attempts + 1
     WHERE id IN (
@@ -49,8 +52,22 @@ export async function claimPendingEvents(db: Database, limit = 20) {
       FOR UPDATE SKIP LOCKED
     )
     RETURNING *;
-  `);
-  return rows as unknown as Array<typeof events.$inferSelect>;
+  `)) as unknown as Array<Record<string, unknown>>;
+
+  return rows.map(
+    (r): typeof events.$inferSelect => ({
+      id: r.id as string,
+      workspaceId: r.workspace_id as string,
+      type: r.type as string,
+      payload: r.payload as Record<string, unknown>,
+      status: r.status as string,
+      attempts: r.attempts as number,
+      errorMessage: (r.error_message as string | null) ?? null,
+      correlationId: (r.correlation_id as string | null) ?? null,
+      createdAt: r.created_at as Date,
+      processedAt: (r.processed_at as Date | null) ?? null,
+    }),
+  );
 }
 
 export async function markEventProcessed(db: Database, id: string) {

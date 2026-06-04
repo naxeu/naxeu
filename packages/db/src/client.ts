@@ -19,7 +19,7 @@ export function databaseUrl(): string {
 export function getDb(url: string = databaseUrl()): Database {
   if (dbInstance) return dbInstance;
   queryClient = postgres(url, { max: 10 });
-  dbInstance = drizzle(queryClient, { schema });
+  dbInstance = drizzle(queryClient, { schema, logger: process.env.DB_LOG === "1" });
   return dbInstance;
 }
 

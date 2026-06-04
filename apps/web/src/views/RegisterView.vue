@@ -1,16 +1,23 @@
 <script setup lang="ts">
-import { ref } from "vue";
+import { computed, onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
 import { useAuthStore } from "@/stores/auth";
+import { useBrandingStore } from "@/stores/branding";
+import { resolveBrandingAssetUrl } from "@/utils/brandingAssets";
 
 const router = useRouter();
 const auth = useAuthStore();
+const branding = useBrandingStore();
 
 const name = ref("");
 const email = ref("");
 const password = ref("");
 const loading = ref(false);
 const error = ref("");
+
+const logoSrc = computed(() => resolveBrandingAssetUrl(branding.branding?.app.logo));
+
+onMounted(() => void branding.load());
 
 async function submit(): Promise<void> {
   loading.value = true;
@@ -32,7 +39,7 @@ async function submit(): Promise<void> {
       <v-row justify="center" align="center">
         <v-col cols="12" sm="8" md="5" lg="4">
           <div class="text-center mb-6">
-            <v-img src="/branding/logo.svg" max-width="120" class="mx-auto mb-3" />
+            <v-img :src="logoSrc" max-width="120" class="mx-auto mb-3" />
             <h1 class="text-h5 font-weight-bold">Konto erstellen</h1>
           </div>
           <v-card class="pa-4" elevation="4" rounded="lg">

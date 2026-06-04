@@ -1,0 +1,63 @@
+# Local development: hot reload (Vite + tsx watch). Merge with the main stack:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
+#
+# Rebuild the dev image when pnpm-lock.yaml or root manifests change; source edits
+# under ./apps and ./packages apply immediately via bind mounts.
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    environment:
+      NODE_ENV: development
+    volumes:
+      - naxeu_storage:/data/storage
+      - ./apps:/app/apps
+      - ./packages:/app/packages
+      - ./config:/app/config
+      - ./branding:/app/branding
+    command:
+      [
+        "sh",
+        "-c",
+        "pnpm --filter @naxeu/db migrate && pnpm --filter @naxeu/db seed && pnpm dev:api",
+      ]
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "node -e \"fetch('http://localhost:3000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))\"",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+      start_period: 90s
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    environment:
+      NODE_ENV: development
+    volumes:
+      - ./apps:/app/apps
+      - ./packages:/app/packages
+      - ./config:/app/config
+      - ./branding:/app/branding
+    command: ["pnpm", "dev:worker"]
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+    environment:
+      VITE_API_URL: ${VITE_API_URL:-http://localhost:3000}
+      VITE_WS_URL: ${VITE_WS_URL:-ws://localhost:3000}
+    volumes:
+      - ./apps:/app/apps
+      - ./packages:/app/packages
+      - ./config:/app/config
+      - ./branding:/app/branding
+    command: ["pnpm", "dev:web"]

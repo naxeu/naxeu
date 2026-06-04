@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { onMounted, ref } from "vue";
+import { computed, onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
 import { useAuthStore } from "@/stores/auth";
 import { useBrandingStore } from "@/stores/branding";
+import { resolveBrandingAssetUrl } from "@/utils/brandingAssets";
 
 const router = useRouter();
 const auth = useAuthStore();
@@ -12,6 +13,8 @@ const email = ref("demo@naxeu.app");
 const password = ref("demo123456");
 const loading = ref(false);
 const error = ref("");
+
+const logoSrc = computed(() => resolveBrandingAssetUrl(branding.branding?.app.logo));
 
 onMounted(() => void branding.load());
 
@@ -35,7 +38,7 @@ async function submit(): Promise<void> {
       <v-row justify="center" align="center">
         <v-col cols="12" sm="8" md="5" lg="4">
           <div class="text-center mb-6">
-            <v-img src="/branding/logo.svg" max-width="120" class="mx-auto mb-3" />
+            <v-img :src="logoSrc" max-width="120" class="mx-auto mb-3" />
             <h1 class="text-h5 font-weight-bold">{{ branding.branding?.app.name ?? "Naxeu" }}</h1>
             <p class="text-medium-emphasis">{{ branding.branding?.app.tagline }}</p>
           </div>

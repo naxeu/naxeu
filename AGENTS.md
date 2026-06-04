@@ -33,7 +33,9 @@ password hashing to avoid one).
 - **No `budgets` table** — budgets live on `categories` (`monthly_budget`,
   `budget_alert_threshold`). **No `receipts` table** — receipts are `attachments`.
 - **No branding in the DB** — branding comes from `config/branding.yml` (served
-  via `GET /branding`).
+  via `GET /branding`). Binary assets (logo, favicon, …) live in the repo
+  `branding/` directory and are served by the API at `/brand-assets/…` (see
+  `BRANDING_DIR`).
 - **Vercel AI SDK is imported ONLY in `packages/ai`** (specifically
   `packages/ai/src/provider.ts`). Business logic must go through `AiService`.
   All AI output must be validated with Zod and degrade to heuristics on failure.
@@ -80,6 +82,7 @@ pnpm db:migrate && pnpm db:seed
 pnpm dev:api      # http://localhost:3000  (tsx watch)
 pnpm dev:worker   # background worker
 pnpm dev:web      # http://localhost:5173  (needs VITE_API_URL=http://localhost:3000)
+pnpm docker:dev   # optional: full stack in Docker with Vite HMR + tsx watch (see README)
 ```
 
 `apps/api` and `apps/worker` run via `tsx` (no build step). The web app builds
@@ -137,8 +140,8 @@ The base Cloud Agent image does NOT ship Postgres, Redis, or Docker. To test:
 ### Docker in the Cloud sandbox
 
 `docker compose up --build` works, but the sandbox kernel needs two workarounds
-(the committed `docker-compose.yml`/Dockerfiles are unmodified — only the daemon
-flags change):
+(the committed production `docker-compose.yml` / `Dockerfile.*` are unmodified —
+only the daemon flags change):
 
 1. The default `overlay2` storage driver fails (nested overlayfs not permitted)
    and the `nf_tables` iptables backend cannot create the NAT table. Start the
@@ -152,6 +155,10 @@ flags change):
 2. Free host ports 3000/5173/5432/6379 first (stop native Postgres/Redis and any
    `pnpm dev:*` servers) — compose publishes those ports.
 3. Then `sudo docker compose up -d`; the api container runs migrate+seed on boot.
+
+For **hot reload** in Docker (Vite + `tsx watch`), use
+`docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build` or
+`pnpm docker:dev` (see root `docker-compose.dev.yml` + `Dockerfile.dev`).
 
 Builds are slow under `vfs` (~2 min/image). Prefer running services natively for
 fast iteration; reserve the Docker path for verifying the container setup.

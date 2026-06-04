@@ -2,13 +2,15 @@ app:
   name: "Naxeu"
   tagline: "Dein Geld im Überblick."
   englishTagline: "AI-assisted finance overview for families."
-  logo: "/branding/naxeulogo.svg"
-  favicon: "/branding/favicon.ico"
+  # Files live in the repo `branding/` folder; the API serves them at /brand-assets/<filename>.
+  # Legacy paths beginning with /branding/ are rewritten to /brand-assets/ in the PWA.
+  logo: "/brand-assets/naxeulogo.svg"
+  favicon: "/brand-assets/favicon.ico"
 
 theme:
   primaryColor: "#1976D2"
   accentColor: "#FFC107"
-  darkModeDefault: false
+  darkModeDefault: true
 
 domains:
   website: "https://naxeu.com"

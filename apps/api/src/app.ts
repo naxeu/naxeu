@@ -1,7 +1,10 @@
 import cors from "@fastify/cors";
 import jwt from "@fastify/jwt";
 import multipart from "@fastify/multipart";
+import fastifyStatic from "@fastify/static";
 import websocket from "@fastify/websocket";
+import { existsSync } from "node:fs";
+import { join } from "node:path";
 import Fastify, { type FastifyInstance } from "fastify";
 import { ZodError } from "zod";
 import type { ServiceContext } from "@naxeu/core";
@@ -74,6 +77,17 @@ export async function buildApp(opts: BuildAppOptions = {}): Promise<FastifyInsta
       await reply.code(401).send({ error: "unauthorized", message: "Invalid or missing token" });
     }
   });
+
+  const brandingDir = process.env.BRANDING_DIR ?? join(process.cwd(), "branding");
+  if (existsSync(brandingDir)) {
+    await app.register(fastifyStatic, {
+      root: brandingDir,
+      prefix: "/brand-assets/",
+      decorateReply: false,
+    });
+  } else {
+    app.log.warn({ brandingDir }, "Branding directory missing; /brand-assets/* will 404");
+  }
 
   // Uniform error handling, including Zod validation errors.
   app.setErrorHandler((error: Error & { statusCode?: number }, _request, reply) => {

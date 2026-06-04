@@ -87,6 +87,24 @@ Stop the stack (containers and default network):
 docker compose down
 ```
 
+### Docker: development (hot reload)
+
+For **Vite HMR** on the PWA and **`tsx watch`** on API and worker (no image rebuild
+for edits under `apps/` or `packages/`), merge the dev override:
+
+```bash
+pnpm docker:dev
+# same as:
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
+```
+
+Uses `Dockerfile.dev` (full `pnpm install` in the image). Source is bind-mounted
+from the host; `config/` and `branding/` stay live-mounted like production.
+
+Rebuild the dev image when **`pnpm-lock.yaml`** or root manifests change. YAML
+config is often cached in-process—after editing `config/*.yml`, restart the
+**`api`** (and usually **`worker`**) container to pick up changes.
+
 Compose reads a project `.env` file for **variable substitution** in
 `docker-compose.yml` (for example `JWT_SECRET`, `POSTGRES_*`, `CORS_ORIGIN`, and
 the `VITE_*` build args for the `web` image). `api` and `worker` also receive
@@ -193,8 +211,16 @@ All configuration is YAML in `config/` (no branding or secrets in the database).
 ### Branding — `config/branding.yml`
 
 App name, taglines, theme colours, domains, email from-address and legal links.
-The PWA fetches it from `GET /branding` and themes itself accordingly. **Change
+The PWA fetches JSON from `GET /branding` and themes itself accordingly. **Change
 the product name and colours here**, not in code or the DB.
+
+`app.logo` and `app.favicon` must be loadable by the browser. Put the files in
+the repo **`branding/`** directory (next to `config/`) and use paths such as
+`/brand-assets/your-logo.svg` — the API serves that folder at `/brand-assets/…`
+(see `BRANDING_DIR` in [`.env.example`](./.env.example)). Older `/branding/…`
+paths are rewritten to `/brand-assets/…` on the API host. With Docker Compose,
+`./config` and `./branding` are mounted read-only into the API container so
+edits apply after an API restart (no image rebuild for YAML or assets alone).
 
 ### AI — `config/ai.yml`
 

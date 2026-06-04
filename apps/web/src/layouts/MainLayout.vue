@@ -5,6 +5,7 @@ import { api } from "@/api/client";
 import { useAuthStore } from "@/stores/auth";
 import { useBrandingStore } from "@/stores/branding";
 import { useRealtimeStore } from "@/stores/realtime";
+import { resolveBrandingAssetUrl } from "@/utils/brandingAssets";
 
 const router = useRouter();
 const auth = useAuthStore();
@@ -27,6 +28,7 @@ const nav = [
 ];
 
 const appName = computed(() => branding.branding?.app.name ?? "Naxeu");
+const logoSrc = computed(() => resolveBrandingAssetUrl(branding.branding?.app.logo));
 
 async function loadUnread(): Promise<void> {
   try {
@@ -60,12 +62,11 @@ watch(
 
 <template>
   <v-navigation-drawer v-model="drawer" color="grey-lighten-5">
-    <div class="pa-4 d-flex align-center ga-2">
-      <v-img src="/branding/logo.svg" max-width="36" height="36" />
-      <div>
-        <div class="text-h6 font-weight-bold">{{ appName }}</div>
-        <div class="text-caption text-medium-emphasis">{{ branding.branding?.app.tagline }}</div>
-      </div>
+    <div class="drawer-brand pa-3">
+      <v-img :src="logoSrc" alt="" contain class="drawer-brand__logo" />
+      <p class="text-caption text-medium-emphasis text-center mt-3 mb-0 px-1 text-wrap">
+        {{ branding.branding?.app.tagline }}
+      </p>
     </div>
     <v-divider />
     <v-list nav density="comfortable">
@@ -124,3 +125,10 @@ watch(
     </v-container>
   </v-main>
 </template>
+
+<style scoped>
+.drawer-brand__logo {
+  width: 100%;
+  max-height: clamp(72px, 28vw, 200px);
+}
+</style>

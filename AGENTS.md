@@ -40,6 +40,11 @@ password hashing to avoid one).
 - **Parent/child transactions must never be double-counted.** Budget vs. account
   inclusion is governed by `affects_budget` / `affects_account_balance`. See
   `packages/core/src/transaction-logic.ts` and its tests.
+- **Transfers** (`type = transfer`) use `account_id` (source) + `counter_account_id`
+  (destination); they affect account balances but are forced to `affects_budget =
+  false` so a credit-card payoff is never re-counted as spend. Credit-card
+  purchases are normal expenses on the card account and DO count toward the
+  budget. See `computeAccountBalances` in `transaction-logic.ts`.
 - **Realtime payloads carry no sensitive data** — only `{ type, entityType,
   entityId, workspaceId, timestamp, meta? }`. The PWA refetches details via REST.
 - Every domain row carries `workspace_id` even though the community edition runs
@@ -108,6 +113,14 @@ Vuetify `v-select` in Playwright: click the `.v-field` containing the label, the
 click the `role="option"`. Avoid inline TS type annotations inside Vue template
 expressions (e.g. `(x as {a: b})` or `(e: T) => ...`) — `vue-tsc` fails to parse
 them; move such logic into the `<script>` block.
+
+PWA service-worker gotcha: the app registers a service worker. If you previously
+loaded a `vite preview`/Docker production build on `localhost:5173`, the browser
+keeps serving cached assets even after you switch to the Vite **dev** server, so
+new UI/code may appear missing. When manually testing the dev server, first clear
+it: DevTools → Application → Storage → "Clear site data", then reload. (Stale JWT
+tokens in `localStorage` from a previous run with a different `JWT_SECRET` cause
+401s — the same "Clear site data" fixes that.)
 
 ## Code conventions
 

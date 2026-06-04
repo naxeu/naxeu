@@ -197,6 +197,25 @@ Notable design choices:
 - Every domain row carries `workspace_id` so the same code can later power Cloud
   and Enterprise editions, even though the Community Edition runs one household.
 
+### Credit cards & transfers
+
+- Credit cards are regular `accounts` with `type = credit_card`.
+- A credit-card **purchase** is a normal expense booked on the card account and
+  **counts toward the budget in the purchase month** (`affects_budget = true`).
+- Paying the statement from the bank is a **transfer** (`type = transfer`) using
+  `account_id` (source) + `counter_account_id` (destination). Transfers move
+  money between accounts (`affects_account_balance = true`) but **never count
+  toward the budget again** (`affects_budget` is forced to `false`). In account
+  balances the signed amount is applied to the source and its opposite to the
+  destination, so paying off a card brings its balance back toward zero without
+  double-counting the spend.
+- If individual card transactions were not imported, a **credit-card statement**
+  can instead be modelled as a parent transaction (`affects_budget = false`) and
+  split into child transactions that carry the budget — see the seed data.
+
+`GET /accounts` returns each account's derived `balance`, shown in the Dashboard
+"Konten" card.
+
 ---
 
 ## How the event pipeline works

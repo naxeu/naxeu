@@ -1,0 +1,37 @@
+# ---------------------------------------------------------------------------
+# Naxeu application configuration (Community Edition).
+#
+# Single-instance / single-household. Exactly one default workspace is created
+# on first boot. There is no multi-tenant SaaS in the community edition.
+# ---------------------------------------------------------------------------
+edition: community
+
+workspace:
+  # The default household workspace that is auto-created during seeding.
+  defaultName: "Demo Family"
+  defaultType: family
+  # Community edition is locked to a single workspace.
+  allowMultiple: false
+
+auth:
+  # JWT access token lifetime.
+  tokenTtl: "7d"
+  allowRegistration: true
+
+budgets:
+  # Default alert threshold (fraction of monthly_budget) when a category does
+  # not define its own budget_alert_threshold.
+  defaultAlertThreshold: 0.8
+
+messages:
+  # Default delivery policy when a user has no explicit preference.
+  defaultDeliveryPolicy: first_success
+  defaultChannels:
+    - push
+    - email
+
+worker:
+  # How often (ms) the worker polls the events table when no pub/sub wakeup.
+  pollIntervalMs: 1500
+  # Max number of automation-triggered event hops to prevent infinite loops.
+  maxAutomationDepth: 5

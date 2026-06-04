@@ -1,0 +1,31 @@
+{
+  "name": "naxeu",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Naxeu Community Edition — AI-assisted finance overview for families.",
+  "license": "AGPL-3.0-only",
+  "type": "module",
+  "engines": {
+    "node": ">=20"
+  },
+  "packageManager": "pnpm@10.33.3",
+  "scripts": {
+    "build": "pnpm -r --filter \"./packages/*\" run build && pnpm -r --filter \"./apps/*\" run build",
+    "dev:api": "pnpm --filter @naxeu/api dev",
+    "dev:worker": "pnpm --filter @naxeu/worker dev",
+    "dev:web": "pnpm --filter @naxeu/web dev",
+    "db:generate": "pnpm --filter @naxeu/db generate",
+    "db:migrate": "pnpm --filter @naxeu/db migrate",
+    "db:seed": "pnpm --filter @naxeu/db seed",
+    "test": "pnpm -r run test",
+    "test:unit": "pnpm -r run test:unit",
+    "lint": "pnpm -r run lint",
+    "typecheck": "pnpm -r run typecheck"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.5",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.3",
+    "vitest": "^2.1.8"
+  }
+}

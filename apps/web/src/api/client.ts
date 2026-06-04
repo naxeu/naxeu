@@ -31,13 +31,19 @@ export class ApiClientError extends Error {
 /** Thin typed fetch wrapper that attaches the JWT and parses JSON errors. */
 export async function api<T = unknown>(path: string, opts: ApiOptions = {}): Promise<T> {
   const headers: Record<string, string> = {};
-  if (!opts.raw) headers["content-type"] = "application/json";
+  const body = opts.raw
+    ? (opts.body as BodyInit | undefined)
+    : opts.body !== undefined
+      ? JSON.stringify(opts.body)
+      : undefined;
+  // Only claim JSON when there is a body; empty body + application/json breaks Fastify's parser.
+  if (!opts.raw && body !== undefined) headers["content-type"] = "application/json";
   if (authToken) headers["authorization"] = `Bearer ${authToken}`;
 
   const res = await fetch(`${API_URL}${path}`, {
     method: opts.method ?? "GET",
     headers,
-    body: opts.raw ? (opts.body as BodyInit) : opts.body ? JSON.stringify(opts.body) : undefined,
+    body,
   });
 
   const text = await res.text();

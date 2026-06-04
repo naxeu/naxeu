@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   buildTransactionTree,
   computeAccountBalanceDelta,
+  computeAccountBalances,
   computeBudgetSpent,
   normalizeSignedAmount,
   type TxLike,
@@ -25,6 +26,68 @@ describe("normalizeSignedAmount", () => {
     expect(normalizeSignedAmount("income", "3250")).toBe("3250.00");
     expect(normalizeSignedAmount("refund", "10")).toBe("10.00");
     expect(normalizeSignedAmount("fee", "2.5")).toBe("-2.50");
+  });
+  it("stores transfers negative on the source account", () => {
+    expect(normalizeSignedAmount("transfer", "450")).toBe("-450.00");
+    expect(normalizeSignedAmount("transfer", "-450")).toBe("-450.00");
+  });
+});
+
+describe("credit card + transfer logic", () => {
+  const bank = "bank";
+  const card = "card";
+
+  it("credit-card purchases count toward the budget; the statement payoff transfer does not", () => {
+    // Two purchases booked on the credit-card account in the purchase month.
+    const purchases: TxLike[] = [
+      tx({ id: "p1", accountId: card, amount: "-89.90", affectsBudget: true }),
+      tx({ id: "p2", accountId: card, amount: "-9.99", affectsBudget: true }),
+    ];
+    // Later: bank pays the card statement — a transfer, no budget impact.
+    const payoff = tx({
+      id: "t",
+      type: "transfer",
+      accountId: bank,
+      counterAccountId: card,
+      amount: "-99.89",
+      affectsBudget: false,
+    });
+
+    // Budget counts the purchases (99.89) but NOT the transfer.
+    expect(computeBudgetSpent([...purchases, payoff])).toBe("99.89");
+  });
+
+  it("transfer moves money between accounts (source down, destination up)", () => {
+    const txs: TxLike[] = [
+      // Card balance after purchases: -99.89
+      tx({ id: "p1", accountId: card, amount: "-89.90" }),
+      tx({ id: "p2", accountId: card, amount: "-9.99" }),
+      // Bank starts with salary.
+      tx({ id: "s", type: "income", accountId: bank, amount: "1000.00" }),
+      // Pay off the card from the bank.
+      tx({
+        id: "t",
+        type: "transfer",
+        accountId: bank,
+        counterAccountId: card,
+        amount: "-99.89",
+        affectsBudget: false,
+      }),
+    ];
+    const balances = computeAccountBalances(txs);
+    // Bank: 1000 - 99.89 = 900.11
+    expect(balances[bank]).toBe("900.11");
+    // Card: -99.89 + 99.89 = 0.00 (paid off)
+    expect(balances[card]).toBe("0.00");
+  });
+
+  it("does not count a transfer as an account expense twice", () => {
+    const txs: TxLike[] = [
+      tx({ id: "a", accountId: bank, amount: "-50.00" }),
+      tx({ id: "t", type: "transfer", accountId: bank, counterAccountId: card, amount: "-450.00", affectsBudget: false }),
+    ];
+    // Transfer is excluded from the budget entirely.
+    expect(computeBudgetSpent(txs)).toBe("50.00");
   });
 });
 

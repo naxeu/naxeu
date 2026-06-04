@@ -33,7 +33,7 @@ async function submit(): Promise<void> {
 </script>
 
 <template>
-  <v-main>
+  <v-main class="nx-auth">
     <v-container class="fill-height" fluid>
       <v-row justify="center" align="center">
         <v-col cols="12" sm="8" md="5" lg="4">
@@ -42,7 +42,7 @@ async function submit(): Promise<void> {
             <h1 class="text-h5 font-weight-bold">{{ branding.branding?.app.name ?? "Naxeu" }}</h1>
             <p class="text-medium-emphasis">{{ branding.branding?.app.tagline }}</p>
           </div>
-          <v-card class="pa-4" elevation="4" rounded="lg">
+          <v-card class="pa-4 nx-card-elevated">
             <v-card-title>Anmelden</v-card-title>
             <v-card-text>
               <v-alert v-if="error" type="error" density="compact" class="mb-3">{{ error }}</v-alert>

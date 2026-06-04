@@ -61,10 +61,12 @@ watch(
 </script>
 
 <template>
-  <v-navigation-drawer v-model="drawer" color="grey-lighten-5">
+  <v-navigation-drawer v-model="drawer" class="nx-drawer">
     <div class="drawer-brand pa-3">
-      <v-img :src="logoSrc" alt="" contain class="drawer-brand__logo" />
-      <p class="text-caption text-medium-emphasis text-center mt-3 mb-0 px-1 text-wrap">
+      <div class="d-flex justify-center w-100">
+        <v-img :src="logoSrc" alt="" contain class="drawer-brand__logo" />
+      </div>
+      <p class="drawer-brand__tagline text-caption text-center mt-3 mb-0 px-1 text-wrap">
         {{ branding.branding?.app.tagline }}
       </p>
     </div>
@@ -85,7 +87,7 @@ watch(
     </v-list>
   </v-navigation-drawer>
 
-  <v-app-bar flat border>
+  <v-app-bar class="nx-app-bar" flat border>
     <v-app-bar-nav-icon @click="drawer = !drawer" />
     <v-toolbar-title class="font-weight-bold">{{ appName }}</v-toolbar-title>
     <v-spacer />
@@ -119,7 +121,7 @@ watch(
     </v-menu>
   </v-app-bar>
 
-  <v-main>
+  <v-main class="nx-main">
     <v-container fluid class="pa-6">
       <router-view />
     </v-container>
@@ -128,7 +130,9 @@ watch(
 
 <style scoped>
 .drawer-brand__logo {
+  flex: 0 0 auto;
   width: 100%;
-  max-height: clamp(72px, 28vw, 200px);
+  max-width: 148px;
+  max-height: clamp(44px, 14vw, 80px);
 }
 </style>

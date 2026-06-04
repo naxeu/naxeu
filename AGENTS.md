@@ -33,15 +33,18 @@ password hashing to avoid one).
 - **No `budgets` table** — budgets live on `categories` (`monthly_budget`,
   `budget_alert_threshold`). **No `receipts` table** — receipts are `attachments`.
 - **No branding in the DB** — branding comes from `config/branding.yml` (served
-  via `GET /branding`). Binary assets (logo, favicon, …) live in the repo
-  `branding/` directory and are served by the API at `/brand-assets/…` (see
-  `BRANDING_DIR`).
+  via `GET /branding`).
 - **Vercel AI SDK is imported ONLY in `packages/ai`** (specifically
   `packages/ai/src/provider.ts`). Business logic must go through `AiService`.
   All AI output must be validated with Zod and degrade to heuristics on failure.
 - **Parent/child transactions must never be double-counted.** Budget vs. account
   inclusion is governed by `affects_budget` / `affects_account_balance`. See
   `packages/core/src/transaction-logic.ts` and its tests.
+- **Transfers** (`type = transfer`) use `account_id` (source) + `counter_account_id`
+  (destination); they affect account balances but are forced to `affects_budget =
+  false` so a credit-card payoff is never re-counted as spend. Credit-card
+  purchases are normal expenses on the card account and DO count toward the
+  budget. See `computeAccountBalances` in `transaction-logic.ts`.
 - **Realtime payloads carry no sensitive data** — only `{ type, entityType,
   entityId, workspaceId, timestamp, meta? }`. The PWA refetches details via REST.
 - Every domain row carries `workspace_id` even though the community edition runs
@@ -82,7 +85,6 @@ pnpm db:migrate && pnpm db:seed
 pnpm dev:api      # http://localhost:3000  (tsx watch)
 pnpm dev:worker   # background worker
 pnpm dev:web      # http://localhost:5173  (needs VITE_API_URL=http://localhost:3000)
-pnpm docker:dev   # optional: full stack in Docker with Vite HMR + tsx watch (see README)
 ```
 
 `apps/api` and `apps/worker` run via `tsx` (no build step). The web app builds
@@ -112,6 +114,14 @@ click the `role="option"`. Avoid inline TS type annotations inside Vue template
 expressions (e.g. `(x as {a: b})` or `(e: T) => ...`) — `vue-tsc` fails to parse
 them; move such logic into the `<script>` block.
 
+PWA service-worker gotcha: the app registers a service worker. If you previously
+loaded a `vite preview`/Docker production build on `localhost:5173`, the browser
+keeps serving cached assets even after you switch to the Vite **dev** server, so
+new UI/code may appear missing. When manually testing the dev server, first clear
+it: DevTools → Application → Storage → "Clear site data", then reload. (Stale JWT
+tokens in `localStorage` from a previous run with a different `JWT_SECRET` cause
+401s — the same "Clear site data" fixes that.)
+
 ## Code conventions
 
 - ESM everywhere; `.js` extensions in relative imports (NodeNext-style).
@@ -119,9 +129,7 @@ them; move such logic into the `<script>` block.
   (`packages/core/src/money.ts`). Expenses are stored signed-negative, income
   positive (`normalizeSignedAmount`).
 - Comments explain non-obvious intent only; no narration.
-- No hardcoded secrets. New env vars go in `.env.example`. AI overrides:
-  `AI_ENABLED`, `AI_DEFAULT_PROVIDER`, `AI_TASK_<TASK>_PROVIDER` / `_MODEL`
-  (see `.env.example`; applied in `packages/config` after `ai.yml` is loaded).
+- No hardcoded secrets. New env vars go in `.env.example`.
 
 ## Cursor Cloud specific instructions
 
@@ -140,8 +148,8 @@ The base Cloud Agent image does NOT ship Postgres, Redis, or Docker. To test:
 ### Docker in the Cloud sandbox
 
 `docker compose up --build` works, but the sandbox kernel needs two workarounds
-(the committed production `docker-compose.yml` / `Dockerfile.*` are unmodified —
-only the daemon flags change):
+(the committed `docker-compose.yml`/Dockerfiles are unmodified — only the daemon
+flags change):
 
 1. The default `overlay2` storage driver fails (nested overlayfs not permitted)
    and the `nf_tables` iptables backend cannot create the NAT table. Start the
@@ -155,10 +163,6 @@ only the daemon flags change):
 2. Free host ports 3000/5173/5432/6379 first (stop native Postgres/Redis and any
    `pnpm dev:*` servers) — compose publishes those ports.
 3. Then `sudo docker compose up -d`; the api container runs migrate+seed on boot.
-
-For **hot reload** in Docker (Vite + `tsx watch`), use
-`docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build` or
-`pnpm docker:dev` (see root `docker-compose.dev.yml` + `Dockerfile.dev`).
 
 Builds are slow under `vfs` (~2 min/image). Prefer running services natively for
 fast iteration; reserve the Docker path for verifying the container setup.

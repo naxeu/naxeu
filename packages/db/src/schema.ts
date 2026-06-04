@@ -98,6 +98,10 @@ export const transactions = pgTable("transactions", {
   // Self-referencing tree: a parent transaction can have child transactions.
   parentId: uuid("parent_id"),
   accountId: uuid("account_id").references(() => accounts.id, { onDelete: "set null" }),
+  // For transfers (e.g. paying a credit-card statement from the bank account):
+  // account_id is the source, counter_account_id the destination. Transfers move
+  // money between accounts and must NOT be counted as a budget expense again.
+  counterAccountId: uuid("counter_account_id").references(() => accounts.id, { onDelete: "set null" }),
   categoryId: uuid("category_id").references(() => categories.id, { onDelete: "set null" }),
   createdByUserId: uuid("created_by_user_id").references(() => users.id, { onDelete: "set null" }),
   assignedToUserId: uuid("assigned_to_user_id").references(() => users.id, { onDelete: "set null" }),

@@ -14,8 +14,8 @@ export default defineConfig({
         name: "Naxeu",
         short_name: "Naxeu",
         description: "Dein Geld im Überblick. AI-assisted finance overview for families.",
-        theme_color: "#1976D2",
-        background_color: "#ffffff",
+        theme_color: "#227044",
+        background_color: "#F7F8F4",
         display: "standalone",
         start_url: "/",
         icons: [

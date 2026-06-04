@@ -4,13 +4,14 @@ app:
   englishTagline: "AI-assisted finance overview for families."
   # Files live in the repo `branding/` folder; the API serves them at /brand-assets/<filename>.
   # Legacy paths beginning with /branding/ are rewritten to /brand-assets/ in the PWA.
-  logo: "/brand-assets/naxeulogo.svg"
+  logo: "/brand-assets/naxeulogowhite.svg"
   favicon: "/brand-assets/favicon.ico"
 
 theme:
-  primaryColor: "#1976D2"
-  accentColor: "#FFC107"
-  darkModeDefault: true
+  # material/design.md — Naxeu palette (sync with apps/web/src/plugins/vuetify.ts)
+  primaryColor: "#102A1C"
+  accentColor: "#B8F36B"
+  darkModeDefault: false
 
 domains:
   website: "https://naxeu.com"

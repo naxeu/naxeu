@@ -1,0 +1,151 @@
+/**
+ * Naxeu design tokens — aligned with material/design.md (Wise-inspired principles, Naxeu-owned palette).
+ */
+:root {
+  /* Brand */
+  --nx-primary-950: #102a1c;
+  --nx-primary-800: #17452d;
+  --nx-primary-600: #227044;
+  --nx-accent-400: #b8f36b;
+  --nx-accent-200: #ddf9bd;
+
+  /* Neutrals */
+  --nx-bg: #f7f8f4;
+  --nx-surface: #ffffff;
+  --nx-surface-2: #eef2ea;
+  --nx-border: #dde5d8;
+  --nx-text: #102015;
+  --nx-text-muted: #5a665d;
+
+  /* Semantic */
+  --nx-success: #1f8a4c;
+  --nx-warning: #b7791f;
+  --nx-danger: #c2413b;
+  --nx-info: #2563a8;
+
+  /* Data viz */
+  --nx-chart-1: #227044;
+  --nx-chart-2: #7cb342;
+  --nx-chart-3: #2f80ed;
+  --nx-chart-4: #f59e0b;
+  --nx-chart-5: #c2413b;
+
+  /* Typography */
+  --nx-font-sans: "Inter", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+
+  --nx-text-xs: 0.75rem;
+  --nx-text-sm: 0.875rem;
+  --nx-text-md: 1rem;
+  --nx-text-lg: 1.125rem;
+  --nx-text-xl: 1.375rem;
+  --nx-text-2xl: 1.75rem;
+  --nx-text-3xl: 2.25rem;
+  --nx-text-4xl: 3rem;
+
+  /* Spacing (4px grid) */
+  --nx-space-1: 4px;
+  --nx-space-2: 8px;
+  --nx-space-3: 12px;
+  --nx-space-4: 16px;
+  --nx-space-5: 20px;
+  --nx-space-6: 24px;
+  --nx-space-8: 32px;
+  --nx-space-10: 40px;
+  --nx-space-12: 48px;
+  --nx-space-16: 64px;
+  --nx-space-20: 80px;
+
+  /* Radius */
+  --nx-radius-sm: 8px;
+  --nx-radius-md: 12px;
+  --nx-radius-lg: 18px;
+  --nx-radius-xl: 24px;
+  --nx-radius-pill: 999px;
+
+  /* Shadow */
+  --nx-shadow-sm: 0 1px 2px rgba(16, 32, 21, 0.06);
+  --nx-shadow-md: 0 8px 24px rgba(16, 32, 21, 0.08);
+
+  /* Motion */
+  --nx-motion-fast: 120ms;
+  --nx-motion-default: 180ms;
+  --nx-motion-slow: 260ms;
+}
+
+html {
+  font-size: 16px;
+}
+
+body {
+  font-family: var(--nx-font-sans);
+  color: var(--nx-text);
+  background-color: var(--nx-bg);
+}
+
+.v-application {
+  background: var(--nx-bg) !important;
+  font-family: var(--nx-font-sans) !important;
+}
+
+:focus-visible {
+  outline: 3px solid var(--nx-primary-950);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* --- App shell (MainLayout) --- */
+.nx-drawer {
+  background-color: var(--nx-primary-950) !important;
+  border-color: var(--nx-primary-800) !important;
+  color: rgba(255, 255, 255, 0.92);
+}
+
+.nx-drawer .v-divider {
+  border-color: rgba(255, 255, 255, 0.12) !important;
+}
+
+.nx-drawer .drawer-brand__tagline {
+  color: rgba(255, 255, 255, 0.72) !important;
+}
+
+.nx-drawer .v-list-item:not(.v-list-item--active) {
+  color: rgba(255, 255, 255, 0.9);
+}
+
+.nx-drawer .v-list-item--active {
+  background-color: rgba(184, 243, 107, 0.16) !important;
+  color: var(--nx-accent-200) !important;
+}
+
+.nx-drawer .v-list-item--active .v-icon {
+  color: var(--nx-accent-400) !important;
+}
+
+.nx-app-bar {
+  background-color: var(--nx-surface) !important;
+  border-bottom: 1px solid var(--nx-border) !important;
+}
+
+.nx-main {
+  background-color: var(--nx-bg) !important;
+}
+
+/* Auth screens */
+.nx-auth {
+  background-color: var(--nx-bg) !important;
+}
+
+/* Cards: calmer elevation, design radius */
+.nx-card-elevated {
+  box-shadow: var(--nx-shadow-sm) !important;
+  border: 1px solid var(--nx-border) !important;
+}

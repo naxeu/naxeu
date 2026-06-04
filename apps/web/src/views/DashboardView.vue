@@ -29,6 +29,12 @@ interface Msg {
   status: string;
   createdAt: string;
 }
+interface Account {
+  id: string;
+  name: string;
+  type: string;
+  balance: string;
+}
 
 const realtime = useRealtimeStore();
 const month = currentMonthKey();
@@ -39,6 +45,16 @@ const expense = ref(0);
 const budget = ref({ totalBudget: "0", totalSpent: "0", totalRemaining: "0", categories: [] as BudgetCat[] });
 const messages = ref<Msg[]>([]);
 const openTx = ref<Tx[]>([]);
+const accounts = ref<Account[]>([]);
+
+const accountIcon: Record<string, string> = {
+  bank: "mdi-bank",
+  credit_card: "mdi-credit-card",
+  cash: "mdi-cash",
+  savings: "mdi-piggy-bank",
+  loan: "mdi-hand-coin",
+  manual: "mdi-wallet",
+};
 
 const topCategories = computed(() =>
   [...budget.value.categories].sort((a, b) => Number(b.spent) - Number(a.spent)).slice(0, 5),
@@ -46,17 +62,20 @@ const topCategories = computed(() =>
 
 async function load(): Promise<void> {
   const [from, to] = monthRange(month);
-  const [txRes, budgetRes, msgRes, openRes] = await Promise.all([
+  const [txRes, budgetRes, msgRes, openRes, accRes] = await Promise.all([
     api<{ transactions: Tx[] }>(`/transactions?from=${from}&to=${to}&rootOnly=true&limit=200`),
     api<typeof budget.value>(`/budgets/monthly?month=${month}`),
     api<{ messages: Msg[] }>("/messages?limit=5"),
     api<{ transactions: Tx[] }>("/transactions?status=pending_review&limit=10"),
+    api<{ accounts: Account[] }>("/accounts"),
   ]);
+  accounts.value = accRes.accounts;
   income.value = txRes.transactions
     .filter((t) => t.type === "income")
     .reduce((s, t) => s + Number(t.amount), 0);
+  // Transfers move money between accounts — they are not expenses.
   expense.value = txRes.transactions
-    .filter((t) => t.type !== "income")
+    .filter((t) => t.type !== "income" && t.type !== "transfer")
     .reduce((s, t) => s + Math.abs(Number(t.amount)), 0);
   budget.value = budgetRes;
   messages.value = msgRes.messages.slice(0, 5);
@@ -104,6 +123,34 @@ watch(() => realtime.lastEvent, () => void load());
           <v-card-text>
             <div class="text-overline">Budget genutzt</div>
             <div class="text-h5 font-weight-bold">{{ formatMoney(budget.totalSpent) }}</div>
+          </v-card-text>
+        </v-card>
+      </v-col>
+    </v-row>
+
+    <v-row class="mt-2">
+      <v-col cols="12">
+        <v-card rounded="lg" border>
+          <v-card-title>Konten</v-card-title>
+          <v-card-text>
+            <v-row dense>
+              <v-col v-for="acc in accounts" :key="acc.id" cols="12" sm="6" md="3">
+                <v-sheet border rounded="lg" class="pa-3 d-flex align-center ga-3">
+                  <v-avatar :color="Number(acc.balance) < 0 ? 'error' : 'primary'" variant="tonal">
+                    <v-icon :icon="accountIcon[acc.type] ?? 'mdi-wallet'" />
+                  </v-avatar>
+                  <div>
+                    <div class="text-body-2 text-medium-emphasis">{{ acc.name }}</div>
+                    <div class="text-subtitle-1 font-weight-bold" :class="Number(acc.balance) < 0 ? 'text-error' : ''">
+                      {{ formatMoney(acc.balance) }}
+                    </div>
+                  </div>
+                </v-sheet>
+              </v-col>
+              <v-col v-if="accounts.length === 0" cols="12">
+                <span class="text-medium-emphasis">Keine Konten</span>
+              </v-col>
+            </v-row>
           </v-card-text>
         </v-card>
       </v-col>

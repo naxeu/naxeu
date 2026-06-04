@@ -34,7 +34,7 @@ async function submit(): Promise<void> {
 </script>
 
 <template>
-  <v-main>
+  <v-main class="nx-auth">
     <v-container class="fill-height" fluid>
       <v-row justify="center" align="center">
         <v-col cols="12" sm="8" md="5" lg="4">
@@ -42,7 +42,7 @@ async function submit(): Promise<void> {
             <v-img :src="logoSrc" max-width="120" class="mx-auto mb-3" />
             <h1 class="text-h5 font-weight-bold">Konto erstellen</h1>
           </div>
-          <v-card class="pa-4" elevation="4" rounded="lg">
+          <v-card class="pa-4 nx-card-elevated">
             <v-card-text>
               <v-alert v-if="error" type="error" density="compact" class="mb-3">{{ error }}</v-alert>
               <v-form @submit.prevent="submit">

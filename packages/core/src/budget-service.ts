@@ -51,6 +51,8 @@ export async function computeWorkspaceMonthlyBudgets(
     txs.map((t) => ({
       id: t.id,
       parentId: t.parentId,
+      accountId: t.accountId,
+      counterAccountId: t.counterAccountId,
       categoryId: t.categoryId,
       type: t.type as never,
       status: t.status,

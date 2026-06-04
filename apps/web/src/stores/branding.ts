@@ -43,7 +43,7 @@ export const useBrandingStore = defineStore("branding", () => {
           logo: "/brand-assets/logo.svg",
           favicon: "/brand-assets/favicon.ico",
         },
-        theme: { primaryColor: "#1976D2", accentColor: "#FFC107", darkModeDefault: false },
+        theme: { primaryColor: "#102A1C", accentColor: "#B8F36B", darkModeDefault: false },
         domains: { website: "https://naxeu.com", app: "https://naxeu.app", cloud: "https://naxeu.cloud" },
       };
       applyFavicon(resolveBrandingAssetUrl(branding.value.app.favicon), branding.value.app.favicon);

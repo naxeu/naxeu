@@ -1,0 +1,23 @@
+# Naxeu API (Fastify). Runs migrations + seed on first boot, then starts.
+FROM node:22-slim AS base
+ENV PNPM_HOME=/pnpm
+ENV PATH=$PNPM_HOME:$PATH
+RUN corepack enable
+WORKDIR /app
+
+# Install dependencies for the whole workspace (cached unless manifests change).
+COPY pnpm-workspace.yaml package.json pnpm-lock.yaml tsconfig.base.json ./
+COPY packages ./packages
+COPY apps ./apps
+RUN pnpm install --frozen-lockfile
+
+# Application config (YAML) and remaining sources.
+COPY config ./config
+COPY branding ./branding
+
+ENV NODE_ENV=production
+ENV CONFIG_DIR=/app/config
+EXPOSE 3000
+
+# Migrate + seed are idempotent (seed is a no-op when users already exist).
+CMD ["sh", "-c", "pnpm --filter @naxeu/db migrate && pnpm --filter @naxeu/db seed && pnpm --filter @naxeu/api start"]

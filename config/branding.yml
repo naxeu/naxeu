@@ -1,0 +1,24 @@
+app:
+  name: "Naxeu"
+  tagline: "Dein Geld im Überblick."
+  englishTagline: "AI-assisted finance overview for families."
+  logo: "/branding/logo.svg"
+  favicon: "/branding/favicon.ico"
+
+theme:
+  primaryColor: "#1976D2"
+  accentColor: "#FFC107"
+  darkModeDefault: false
+
+domains:
+  website: "https://naxeu.com"
+  app: "https://naxeu.app"
+  cloud: "https://naxeu.cloud"
+
+email:
+  fromName: "Naxeu"
+  fromAddress: "noreply@naxeu.com"
+
+legal:
+  imprintUrl: ""
+  privacyUrl: ""

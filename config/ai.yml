@@ -1,0 +1,45 @@
+# ---------------------------------------------------------------------------
+# Naxeu AI configuration.
+#
+# The MVP ships with `enabled: false` and every task pointing at the `mock`
+# provider, so the whole product works with no real API key. Flip `enabled`
+# to true and repoint individual tasks to a real provider to use live models.
+# `${VAR}` placeholders are resolved from environment variables at load time.
+# ---------------------------------------------------------------------------
+ai:
+  enabled: false
+  defaultProvider: mock
+
+  providers:
+    mock:
+      type: mock
+
+    openai:
+      type: openai
+      apiKey: "${OPENAI_API_KEY}"
+
+    anthropic:
+      type: anthropic
+      apiKey: "${ANTHROPIC_API_KEY}"
+
+    local:
+      type: openai-compatible
+      baseUrl: "http://localhost:11434/v1"
+      apiKey: "local"
+
+  tasks:
+    quickInputParsing:
+      provider: mock
+      model: "mock"
+
+    transactionCategorization:
+      provider: mock
+      model: "mock"
+
+    attachmentExtraction:
+      provider: mock
+      model: "mock"
+
+    monthlySummary:
+      provider: mock
+      model: "mock"

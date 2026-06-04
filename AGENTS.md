@@ -91,6 +91,13 @@ pnpm dev:web      # http://localhost:5173  (needs VITE_API_URL=http://localhost:
 with Vite. After editing the Drizzle schema run `pnpm db:generate` and commit the
 new files under `packages/db/migrations/`.
 
+The API **auto-applies pending migrations on startup** (`apps/api/src/index.ts`,
+idempotent, disable with `AUTO_MIGRATE=false`). This prevents
+`column "x" does not exist` errors when the code is ahead of a persisted database
+(e.g. a Docker `postgres` volume created before a newer migration). If you ever
+see such an error, the running DB is behind — restart the API or run
+`pnpm db:migrate` against that database.
+
 ## Testing
 
 - Unit tests: `pnpm -r test` (Vitest). Pure logic lives in `packages/core` and

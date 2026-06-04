@@ -3,6 +3,15 @@ export function currentMonthKey(): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
 
+/** Returns the [first, last] day (YYYY-MM-DD) of a YYYY-MM month. */
+export function monthRange(month: string): [string, string] {
+  const [y, m] = month.split("-").map((n) => Number.parseInt(n, 10));
+  const first = `${month}-01`;
+  const lastDay = new Date(y ?? 1970, m ?? 1, 0).getDate();
+  const last = `${month}-${String(lastDay).padStart(2, "0")}`;
+  return [first, last];
+}
+
 const eur = new Intl.NumberFormat("de-DE", { style: "currency", currency: "EUR" });
 
 export function formatMoney(value: string | number | null | undefined): string {

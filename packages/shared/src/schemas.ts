@@ -25,7 +25,15 @@ export const moneyInput = z.union([z.number(), moneyString]).transform((v) => {
   return v;
 });
 
-const isoDate = z.string().regex(/^\d{4}-\d{2}-\d{2}$/u, "Expected YYYY-MM-DD");
+const isoDate = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/u, "Expected YYYY-MM-DD")
+  .refine((v) => {
+    // Reject syntactically valid but non-existent dates like 2026-06-31.
+    const [y, m, d] = v.split("-").map((n) => Number.parseInt(n, 10));
+    const dt = new Date(Date.UTC(y!, m! - 1, d!));
+    return dt.getUTCFullYear() === y && dt.getUTCMonth() === m! - 1 && dt.getUTCDate() === d;
+  }, "Not a valid calendar date");
 
 // --- Auth ---------------------------------------------------------------
 export const registerSchema = z.object({

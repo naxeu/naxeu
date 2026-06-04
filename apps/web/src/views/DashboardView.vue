@@ -2,7 +2,7 @@
 import { computed, onMounted, ref, watch } from "vue";
 import { api } from "@/api/client";
 import { useRealtimeStore } from "@/stores/realtime";
-import { currentMonthKey, formatMoney, severityColor } from "@/utils/format";
+import { currentMonthKey, formatMoney, monthRange, severityColor } from "@/utils/format";
 
 interface Tx {
   id: string;
@@ -45,9 +45,7 @@ const topCategories = computed(() =>
 );
 
 async function load(): Promise<void> {
-  const [yyyy, mm] = month.split("-");
-  const from = `${yyyy}-${mm}-01`;
-  const to = `${yyyy}-${mm}-31`;
+  const [from, to] = monthRange(month);
   const [txRes, budgetRes, msgRes, openRes] = await Promise.all([
     api<{ transactions: Tx[] }>(`/transactions?from=${from}&to=${to}&rootOnly=true&limit=200`),
     api<typeof budget.value>(`/budgets/monthly?month=${month}`),

@@ -5,6 +5,8 @@
 # provider, so the whole product works with no real API key. Flip `enabled`
 # to true and repoint individual tasks to a real provider to use live models.
 # `${VAR}` placeholders are resolved from environment variables at load time.
+# Additionally, `AI_ENABLED`, `AI_DEFAULT_PROVIDER`, and `AI_TASK_<TASK>_PROVIDER`
+# / `AI_TASK_<TASK>_MODEL` (see `.env.example`) override the same fields after YAML load.
 # ---------------------------------------------------------------------------
 ai:
   enabled: false

@@ -116,7 +116,9 @@ them; move such logic into the `<script>` block.
   (`packages/core/src/money.ts`). Expenses are stored signed-negative, income
   positive (`normalizeSignedAmount`).
 - Comments explain non-obvious intent only; no narration.
-- No hardcoded secrets. New env vars go in `.env.example`.
+- No hardcoded secrets. New env vars go in `.env.example`. AI overrides:
+  `AI_ENABLED`, `AI_DEFAULT_PROVIDER`, `AI_TASK_<TASK>_PROVIDER` / `_MODEL`
+  (see `.env.example`; applied in `packages/config` after `ai.yml` is loaded).
 
 ## Cursor Cloud specific instructions
 

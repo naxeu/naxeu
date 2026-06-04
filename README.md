@@ -81,6 +81,18 @@ Local URLs:
 - API: <http://localhost:3000>
 - API health check: <http://localhost:3000/health>
 
+Stop the stack (containers and default network):
+
+```bash
+docker compose down
+```
+
+Compose reads a project `.env` file for **variable substitution** in
+`docker-compose.yml` (for example `JWT_SECRET`, `POSTGRES_*`, `CORS_ORIGIN`, and
+the `VITE_*` build args for the `web` image). `api` and `worker` also receive
+optional `VAPID_*` and `SMTP_*` values from the same file when set—see
+[Optional delivery (Web Push & SMTP)](#optional-delivery-web-push--smtp).
+
 ### Demo login
 
 ```
@@ -91,6 +103,36 @@ demo123456
 The seed creates the **Demo Family** workspace, three accounts (Bankkonto,
 Kreditkarte, Bargeld), budget categories, and example transactions including a
 credit-card statement and a Despar receipt with sub-transactions.
+
+### Optional delivery (Web Push & SMTP)
+
+Message delivery uses mock transports unless you configure **VAPID** keys (Web
+Push) and/or **SMTP** (e‑mail). Names and placeholders live in [`.env.example`](./.env.example).
+
+**Generate VAPID keys** (requires Node/npm; `npx` downloads the `web-push` CLI on first use):
+
+```bash
+npx --yes web-push generate-vapid-keys
+```
+
+From the same machine, using the API image built by this repo (needs network
+for `npx`):
+
+```bash
+docker compose run --rm api npx --yes web-push generate-vapid-keys
+```
+
+Copy the public and private keys into `.env` as `VAPID_PUBLIC_KEY` and
+`VAPID_PRIVATE_KEY`, set `VAPID_SUBJECT` (typically `mailto:you@example.com`).
+The committed `docker-compose.yml` forwards these (and SMTP) into **`api`** and
+**`worker`**; recreate containers after editing `.env`, for example:
+
+```bash
+docker compose up -d --build
+```
+
+For SMTP, set `SMTP_HOST` and the other fields from `.env.example` in the same
+`.env` file.
 
 ---
 
@@ -168,11 +210,18 @@ ai:
     monthlySummary:           { provider: mock, model: "mock" }
 ```
 
+Environment overrides (applied after YAML load; see [`.env.example`](./.env.example)):
+`AI_ENABLED`, `AI_DEFAULT_PROVIDER`, and per-task `AI_TASK_<TASK>_PROVIDER` /
+`AI_TASK_<TASK>_MODEL` (task name in `UPPER_SNAKE`, e.g.
+`AI_TASK_QUICK_INPUT_PARSING_MODEL=gpt-4o-mini`). Docker Compose forwards these
+into `api` and `worker` when set in `.env`.
+
 To use a real model: set `OPENAI_API_KEY` (or `ANTHROPIC_API_KEY`) in `.env`,
-flip `enabled: true`, and repoint a task to the `openai`/`anthropic`/`local`
-provider. `${VAR}` placeholders are resolved from the environment. The Vercel AI
-SDK is used **only** inside `packages/ai`; business logic never imports it, and
-all AI output is validated with Zod (falling back to heuristics on failure).
+set `AI_ENABLED=true` and `AI_DEFAULT_PROVIDER` / task env vars (or flip
+`enabled` and tasks in YAML). `${VAR}` placeholders inside YAML are still
+resolved from the environment. The Vercel AI SDK is used **only** inside
+`packages/ai`; business logic never imports it, and all AI output is validated
+with Zod (falling back to heuristics on failure).
 
 ### App — `config/app.yml`
 

@@ -2,7 +2,7 @@ app:
   name: "Naxeu"
   tagline: "Dein Geld im Überblick."
   englishTagline: "AI-assisted finance overview for families."
-  logo: "/branding/logo.svg"
+  logo: "/branding/naxeulogo.svg"
   favicon: "/branding/favicon.ico"
 
 theme:

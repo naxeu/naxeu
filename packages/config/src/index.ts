@@ -87,6 +87,77 @@ export type AiConfig = z.infer<typeof aiConfigSchema>;
 export type AiProviderConfig = z.infer<typeof aiProviderSchema>;
 export type AiTaskName = keyof AiConfig["ai"]["tasks"];
 
+/** Must match `aiConfigSchema` shape `ai.tasks` keys. */
+const AI_TASK_KEYS = [
+  "quickInputParsing",
+  "transactionCategorization",
+  "attachmentExtraction",
+  "monthlySummary",
+] as const satisfies readonly AiTaskName[];
+
+function camelToUpperSnake(s: string): string {
+  return s.replace(/([a-z\d])([A-Z])/g, "$1_$2").toUpperCase();
+}
+
+/** Parses `AI_ENABLED`; unknown values leave the YAML setting unchanged. */
+function optionalEnvBool(value: string | undefined): boolean | undefined {
+  if (value === undefined) return undefined;
+  const v = value.trim();
+  if (v === "") return undefined;
+  const l = v.toLowerCase();
+  if (["1", "true", "yes", "on"].includes(l)) return true;
+  if (["0", "false", "no", "off"].includes(l)) return false;
+  return undefined;
+}
+
+/**
+ * Overrides `config/ai.yml` from the environment (after YAML parse + `${VAR}` interpolation).
+ *
+ * - `AI_ENABLED` — `true` / `false` / `1` / `0` / `yes` / `no` / `on` / `off`
+ * - `AI_DEFAULT_PROVIDER` — provider id (e.g. `openai`, `mock`)
+ * - `AI_TASK_<UPPER_SNAKE_TASK>_PROVIDER` / `_MODEL` — e.g. `AI_TASK_QUICK_INPUT_PARSING_MODEL=gpt-4o-mini`
+ */
+function applyAiEnvOverrides(parsed: AiConfig): AiConfig {
+  const e = process.env;
+  const enabled = optionalEnvBool(e.AI_ENABLED);
+  const defaultProvider =
+    e.AI_DEFAULT_PROVIDER !== undefined && e.AI_DEFAULT_PROVIDER.trim() !== ""
+      ? e.AI_DEFAULT_PROVIDER.trim()
+      : undefined;
+
+  let tasks = parsed.ai.tasks;
+  for (const key of AI_TASK_KEYS) {
+    const snake = camelToUpperSnake(key);
+    const pRaw = e[`AI_TASK_${snake}_PROVIDER`];
+    const mRaw = e[`AI_TASK_${snake}_MODEL`];
+    const pTrim = pRaw !== undefined ? pRaw.trim() : "";
+    const mTrim = mRaw !== undefined ? mRaw.trim() : "";
+    if (pTrim !== "" || mTrim !== "") {
+      tasks = {
+        ...tasks,
+        [key]: {
+          ...tasks[key],
+          ...(pTrim !== "" ? { provider: pTrim } : {}),
+          ...(mTrim !== "" ? { model: mTrim } : {}),
+        },
+      };
+    }
+  }
+
+  if (enabled === undefined && defaultProvider === undefined && tasks === parsed.ai.tasks) {
+    return parsed;
+  }
+
+  return {
+    ai: {
+      ...parsed.ai,
+      ...(enabled !== undefined ? { enabled } : {}),
+      ...(defaultProvider !== undefined ? { defaultProvider } : {}),
+      tasks,
+    },
+  };
+}
+
 // --- app.yml ------------------------------------------------------------
 export const appConfigSchema = z.object({
   edition: z.string().default("community"),
@@ -129,9 +200,10 @@ let cached: NaxeuConfig | null = null;
 /** Loads, interpolates and validates all YAML config files (memoised). */
 export function loadConfig(dir: string = configDir()): NaxeuConfig {
   if (cached) return cached;
+  const aiYaml = aiConfigSchema.parse(loadYamlFile(dir, "ai.yml"));
   cached = {
     app: appConfigSchema.parse(loadYamlFile(dir, "app.yml")),
-    ai: aiConfigSchema.parse(loadYamlFile(dir, "ai.yml")),
+    ai: applyAiEnvOverrides(aiYaml),
     branding: brandingSchema.parse(loadYamlFile(dir, "branding.yml")),
   };
   return cached;

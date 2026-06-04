@@ -56,21 +56,29 @@ const KNOWN_MERCHANTS = [
   "shell",
 ];
 
-/** Parses a German/European number like "84,30" or "3.250,00" or "12.99". */
+/** Parses a German/European number like "84,30", "3.250,00", "12.99" or "3250". */
 export function parseAmount(raw: string): number | null {
-  // Find first token that looks like a number with optional thousands/decimals.
-  const match = raw.match(/[+-]?\d{1,3}(?:[.\s]\d{3})*(?:[.,]\d{1,2})?|\d+(?:[.,]\d{1,2})?/u);
+  // Grab the first contiguous numeric run (digits plus . , and spaces between).
+  const match = raw.match(/[+-]?\d[\d.,\s]*\d|[+-]?\d/u);
   if (!match) return null;
   let token = match[0].replace(/\s/gu, "");
-  // If both separators appear, the last one is the decimal separator.
-  if (token.includes(",") && token.includes(".")) {
+
+  const hasComma = token.includes(",");
+  const hasDot = token.includes(".");
+  if (hasComma && hasDot) {
+    // The last separator is the decimal separator.
     if (token.lastIndexOf(",") > token.lastIndexOf(".")) {
       token = token.replace(/\./gu, "").replace(",", ".");
     } else {
       token = token.replace(/,/gu, "");
     }
-  } else if (token.includes(",")) {
+  } else if (hasComma) {
     token = token.replace(",", ".");
+  } else if (hasDot) {
+    // A lone dot followed by exactly 3 digits is a thousands separator (3.250),
+    // otherwise it is a decimal point (12.99).
+    const afterDot = token.slice(token.lastIndexOf(".") + 1);
+    if (afterDot.length === 3) token = token.replace(/\./gu, "");
   }
   const value = Number.parseFloat(token);
   return Number.isFinite(value) ? value : null;

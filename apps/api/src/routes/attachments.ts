@@ -6,13 +6,17 @@ import { and, desc, eq } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import { attachments } from "@naxeu/db/schema";
 import {
+  deleteAttachment,
   emitEvent,
   getTransactionTree,
   loadProcessedAttachmentAnalysis,
   markAttachmentAnalysisFailed,
   runAttachmentAnalysis,
   tryClaimAttachmentForAnalysis,
+  updateAttachmentExtractedData,
 } from "@naxeu/core";
+import { patchAttachmentExtractedSchema } from "@naxeu/shared";
+import { buildAttachmentThumbnailJpeg, readFileLimited } from "../lib/attachment-thumbnail.js";
 
 export async function registerAttachmentRoutes(app: FastifyInstance): Promise<void> {
   const ctx = app.ctx;
@@ -62,6 +66,51 @@ export async function registerAttachmentRoutes(app: FastifyInstance): Promise<vo
     });
 
     return reply.code(201).send({ attachment: row });
+  });
+
+  /** Scaled JPEG preview for raster images (does not stream the original full-size file). */
+  app.get("/attachments/:id/thumbnail", { preHandler: app.authenticate }, async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const q = request.query as { max?: string };
+    const maxEdge = Math.min(1024, Math.max(64, Number.parseInt(String(q.max ?? "240"), 10) || 240));
+
+    const [row] = await ctx.db
+      .select()
+      .from(attachments)
+      .where(and(eq(attachments.id, id), eq(attachments.workspaceId, request.auth.workspaceId)))
+      .limit(1);
+    if (!row) return reply.code(404).send({ error: "not_found", message: "Attachment not found" });
+
+    const storageRoot = resolve(storageDir);
+    const absoluteFile = resolve(storageRoot, row.storagePath);
+    const rel = relative(storageRoot, absoluteFile);
+    if (rel.startsWith("..") || rel.includes(`..${sep}`)) {
+      return reply.code(400).send({ error: "validation_error", message: "Invalid attachment storage path" });
+    }
+
+    const buf = await readFileLimited(absoluteFile);
+    if (!buf) {
+      return reply.code(413).send({ error: "payload_too_large", message: "File too large for thumbnail" });
+    }
+    const jpeg = await buildAttachmentThumbnailJpeg(buf, maxEdge);
+    if (!jpeg) {
+      return reply.code(404).send({ error: "not_found", message: "Thumbnail not available for this file type" });
+    }
+    reply.header("Content-Type", "image/jpeg");
+    reply.header("Cache-Control", "private, max-age=86400");
+    return reply.send(jpeg);
+  });
+
+  app.patch("/attachments/:id", { preHandler: app.authenticate }, async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const body = patchAttachmentExtractedSchema.parse(request.body);
+    const row = await updateAttachmentExtractedData(ctx, {
+      attachmentId: id,
+      workspaceId: request.auth.workspaceId,
+      extractedData: body.extractedData,
+    });
+    if (!row) return reply.code(404).send({ error: "not_found", message: "Attachment not found" });
+    return { attachment: row };
   });
 
   app.get("/attachments/:id", { preHandler: app.authenticate }, async (request, reply) => {
@@ -144,5 +193,16 @@ export async function registerAttachmentRoutes(app: FastifyInstance): Promise<vo
       const message = err instanceof Error ? err.message : "Analyse fehlgeschlagen";
       return reply.code(500).send({ error: "server_error", message });
     }
+  });
+
+  app.delete("/attachments/:id", { preHandler: app.authenticate }, async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const ok = await deleteAttachment(ctx, {
+      attachmentId: id,
+      workspaceId: request.auth.workspaceId,
+      storageDir,
+    });
+    if (!ok) return reply.code(404).send({ error: "not_found", message: "Attachment not found" });
+    return reply.code(204).send();
   });
 }

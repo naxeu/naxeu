@@ -239,3 +239,16 @@ html.nx-theme-dark .v-divider {
 html.nx-theme-dark .v-card-actions {
   border-color: rgba(255, 255, 255, 0.08);
 }
+
+/*
+ * Modals: VCard defaults to variant "outlined" (transparent fill) in plugins/vuetify.ts.
+ * 1) Opaque fill on the overlay content wrapper (content-class on v-dialog).
+ * 2) Fallback on the card itself.
+ */
+.nx-dialog-panel {
+  background-color: rgb(var(--v-theme-surface)) !important;
+}
+
+.v-dialog.v-overlay .v-overlay__content .v-card {
+  background-color: rgb(var(--v-theme-surface)) !important;
+}

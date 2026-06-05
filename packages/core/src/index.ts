@@ -12,4 +12,6 @@ export * from "./transaction-service.js";
 export * from "./budget-service.js";
 export * from "./automation-service.js";
 export * from "./attachment-analysis.js";
+export * from "./attachment-delete.js";
+export * from "./attachment-extracted-update.js";
 export { sniffImageMime } from "./image-sniff.js";

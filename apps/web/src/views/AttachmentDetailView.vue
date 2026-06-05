@@ -3,9 +3,8 @@ import { computed, onMounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { api } from "@/api/client";
 import { useRealtimeStore } from "@/stores/realtime";
-import { formatMoney } from "@/utils/format";
-import type { ExtractedAttachment } from "@naxeu/shared";
-import { TransactionStatus } from "@naxeu/shared";
+import { formatMoney, formatDate } from "@/utils/format";
+import { TransactionStatus, extractedAttachmentSchema } from "@naxeu/shared";
 import AttachmentThumbnail from "@/components/AttachmentThumbnail.vue";
 
 type TxStatusValue = (typeof TransactionStatus.values)[number];
@@ -19,6 +18,21 @@ interface Attachment {
   extractedText: string | null;
   transactionId: string | null;
   createdAt: string;
+}
+
+interface ExtractedFormLine {
+  description: string;
+  amount: string;
+  categoryHint: string;
+}
+
+interface ExtractedFormState {
+  merchantName: string;
+  date: string;
+  total: string;
+  currency: string;
+  confidence: string;
+  lineItems: ExtractedFormLine[];
 }
 
 interface ChildTransaction {
@@ -86,16 +100,53 @@ const categories = ref<Category[]>([]);
 const extractionSource = ref<"model" | "heuristic" | null>(null);
 const savingChildId = ref<string | null>(null);
 const savingAll = ref(false);
+const deleteReceiptOpen = ref(false);
+const deleteReceiptLoading = ref(false);
+const deleteChildTarget = ref<ChildRow | null>(null);
+const deleteChildLoading = ref(false);
+const savingExtracted = ref(false);
+
+const extractedForm = ref<ExtractedFormState | null>(null);
 
 const txStatuses = [...TransactionStatus.values];
 
-const extracted = computed((): ExtractedAttachment | null => {
-  const raw = attachment.value?.extractedData;
-  if (!raw || typeof raw !== "object") return null;
-  const o = raw as Record<string, unknown>;
-  if (!Array.isArray(o.lineItems)) return null;
-  return raw as ExtractedAttachment;
+const deleteChildDialogOpen = computed({
+  get: () => deleteChildTarget.value != null,
+  set: (v: boolean) => {
+    if (!v) deleteChildTarget.value = null;
+  },
 });
+
+function fillExtractedForm(): void {
+  const raw = attachment.value?.extractedData;
+  if (!raw || typeof raw !== "object") {
+    extractedForm.value = null;
+    return;
+  }
+  const o = raw as Record<string, unknown>;
+  if (!Array.isArray(o.lineItems)) {
+    extractedForm.value = null;
+    return;
+  }
+  const parsed = extractedAttachmentSchema.safeParse(raw);
+  if (!parsed.success) {
+    extractedForm.value = null;
+    return;
+  }
+  const d = parsed.data;
+  extractedForm.value = {
+    merchantName: d.merchantName ?? "",
+    date: d.date ?? "",
+    total: d.total ?? "",
+    currency: d.currency,
+    confidence: String(d.confidence),
+    lineItems: d.lineItems.map((li) => ({
+      description: li.description,
+      amount: li.amount,
+      categoryHint: li.categoryHint ?? "",
+    })),
+  };
+}
 
 const inferredExtraction = computed((): "model" | "heuristic" | null => {
   const t = attachment.value?.extractedText ?? "";
@@ -161,11 +212,13 @@ async function loadDetail(): Promise<void> {
     setChildrenFromTree(res.transactionTree);
     const inf = inferredExtraction.value;
     if (inf) extractionSource.value = inf;
+    fillExtractedForm();
     await loadCategories();
   } catch (e) {
     error.value = e instanceof Error ? e.message : "Laden fehlgeschlagen";
     attachment.value = null;
     childRows.value = [];
+    extractedForm.value = null;
   } finally {
     loading.value = false;
   }
@@ -177,11 +230,41 @@ watch(id, () => void loadDetail());
 watch(
   () => realtime.lastEvent,
   (ev) => {
-    if (ev?.entityType === "attachment" && ev.entityId === id.value) void loadDetail();
+    if (ev?.entityType !== "attachment" || ev.entityId !== id.value) return;
+    if (ev.meta?.deleted === true) {
+      void router.push({ name: "attachments" });
+      return;
+    }
+    void loadDetail();
   },
 );
 
 const moneyOk = (s: string): boolean => /^-?\d+(\.\d{1,2})?$/u.test(s.trim().replace(",", "."));
+
+/** Vergleicht Summe (extrahiert) mit der Summe der Positionsbeträge (Formular, positiv). */
+const sumMismatchWarning = computed((): string | null => {
+  const form = extractedForm.value;
+  if (!form || childRows.value.length === 0) return null;
+  const extStr = form.total.trim().replace(",", ".");
+  if (extStr === "") return null;
+  if (!moneyOk(extStr)) return null;
+  const extTotal = Math.abs(Number.parseFloat(extStr));
+  if (!Number.isFinite(extTotal)) return null;
+
+  let sum = 0;
+  for (const row of childRows.value) {
+    const p = row.form.amountPos.trim().replace(",", ".");
+    if (!moneyOk(p)) return null;
+    sum += Math.abs(Number.parseFloat(p));
+  }
+  if (!Number.isFinite(sum)) return null;
+
+  const tol = 0.02;
+  if (Math.abs(sum - extTotal) <= tol) return null;
+
+  const cur = form.currency.trim().toUpperCase().slice(0, 3) || "EUR";
+  return `Die Summe der Positionen (${formatMoney(sum)}) stimmt nicht mit der extrahierten Belegsumme (${formatMoney(extTotal)}) überein (Währung laut Beleg: ${cur}). Bitte Beträge oder die extrahierte Summe prüfen.`;
+});
 
 async function saveChildRow(row: ChildRow): Promise<boolean> {
   const { tx, form } = row;
@@ -251,10 +334,92 @@ function openParent(): void {
   if (parentId.value) void router.push(`/transactions/${parentId.value}`);
 }
 
-function categoryHintForIndex(i: number): string | null {
-  const li = extracted.value?.lineItems[i];
-  const h = li?.categoryHint;
-  return h && String(h).trim() ? String(h) : null;
+async function saveExtractedData(): Promise<void> {
+  if (!extractedForm.value) return;
+  savingExtracted.value = true;
+  error.value = "";
+  try {
+    const f = extractedForm.value;
+    const totalSt = f.total.trim().replace(",", ".");
+    const totalSubmit = totalSt === "" ? null : totalSt;
+    if (totalSubmit !== null && !moneyOk(totalSubmit)) {
+      error.value = "Summe: ungültiger Betrag (max. 2 Nachkommastellen).";
+      return;
+    }
+    for (let i = 0; i < f.lineItems.length; i++) {
+      const amt = f.lineItems[i].amount.trim().replace(",", ".");
+      if (!moneyOk(amt)) {
+        error.value = `Position ${i + 1} (KI-Zeile): ungültiger Betrag.`;
+        return;
+      }
+    }
+    const conf = Number.parseFloat(f.confidence.replace(",", "."));
+    if (!Number.isFinite(conf)) {
+      error.value = "Konfidenz muss eine Zahl sein (0–1).";
+      return;
+    }
+    const payload = {
+      merchantName: f.merchantName.trim() || null,
+      date: f.date.trim() || null,
+      total: totalSubmit,
+      currency: f.currency.trim().toUpperCase().replace(/[^A-Z]/gu, "").slice(0, 3) || "EUR",
+      confidence: Math.min(1, Math.max(0, conf)),
+      lineItems: f.lineItems.map((li) => ({
+        description: li.description,
+        amount: li.amount.trim().replace(",", "."),
+        categoryHint: li.categoryHint.trim() || null,
+      })),
+    };
+    const parsed = extractedAttachmentSchema.safeParse(payload);
+    if (!parsed.success) {
+      error.value = parsed.error.issues.map((i) => i.message).join("; ");
+      return;
+    }
+    const res = await api<{ attachment: Attachment }>(`/attachments/${id.value}`, {
+      method: "PATCH",
+      body: { extractedData: parsed.data },
+    });
+    attachment.value = res.attachment;
+    fillExtractedForm();
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : "Belegdaten konnten nicht gespeichert werden";
+  } finally {
+    savingExtracted.value = false;
+  }
+}
+
+function openDeleteChildDialog(row: ChildRow): void {
+  deleteChildTarget.value = row;
+}
+
+async function confirmDeleteChild(): Promise<void> {
+  const row = deleteChildTarget.value;
+  if (!row) return;
+  deleteChildLoading.value = true;
+  error.value = "";
+  try {
+    await api(`/transactions/${row.tx.id}`, { method: "DELETE" });
+    deleteChildTarget.value = null;
+    await loadDetail();
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : "Position konnte nicht gelöscht werden";
+  } finally {
+    deleteChildLoading.value = false;
+  }
+}
+
+async function confirmDeleteReceipt(): Promise<void> {
+  deleteReceiptLoading.value = true;
+  error.value = "";
+  try {
+    await api(`/attachments/${id.value}`, { method: "DELETE" });
+    deleteReceiptOpen.value = false;
+    await router.push({ name: "attachments" });
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : "Beleg konnte nicht gelöscht werden";
+  } finally {
+    deleteReceiptLoading.value = false;
+  }
 }
 </script>
 
@@ -272,13 +437,24 @@ function categoryHintForIndex(i: number): string | null {
       >
         Analyse erneut starten
       </v-btn>
+      <v-btn
+        v-if="attachment"
+        color="error"
+        variant="tonal"
+        prepend-icon="mdi-delete-outline"
+        :disabled="analyzing || deleteReceiptLoading"
+        @click="deleteReceiptOpen = true"
+      >
+        Beleg löschen
+      </v-btn>
     </div>
 
     <v-progress-linear v-if="loading" indeterminate class="mb-4" />
     <v-alert v-else-if="error" type="error" density="compact" class="mb-3">{{ error }}</v-alert>
 
     <template v-if="!loading && attachment">
-      <h1 class="text-h4 font-weight-bold mb-2">{{ attachment.fileName }}</h1>
+      <h1 class="text-h4 font-weight-bold mb-1">Beleg</h1>
+      <p class="text-body-2 text-medium-emphasis mb-4">Hochgeladen am {{ formatDate(attachment.createdAt) }}</p>
       <div class="d-flex flex-wrap align-center ga-2 mb-4">
         <v-chip size="small" :color="attachment.status === 'processed' ? 'success' : attachment.status === 'failed' ? 'error' : 'info'">
           {{ attachment.status }}
@@ -293,7 +469,11 @@ function categoryHintForIndex(i: number): string | null {
       <v-row>
         <v-col cols="12" md="4">
           <v-card rounded="lg" border>
-            <AttachmentThumbnail :attachment-id="attachment.id" :mime-type="attachment.mimeType" />
+            <AttachmentThumbnail
+              :attachment-id="attachment.id"
+              :mime-type="attachment.mimeType"
+              variant="detail"
+            />
             <v-card-text v-if="attachment.extractedText" class="text-caption">{{ attachment.extractedText }}</v-card-text>
           </v-card>
         </v-col>
@@ -320,67 +500,65 @@ function categoryHintForIndex(i: number): string | null {
             Extraktion vom <strong>Sprachmodell</strong> (bei Fotos inkl. Bildanalyse).
           </v-alert>
 
-          <v-card v-if="extracted" rounded="lg" border class="mb-4">
+          <v-card v-if="extractedForm" rounded="lg" border class="mb-4">
             <v-card-title class="d-flex align-center flex-wrap ga-2">
               <span>Geparste Belegdaten</span>
               <v-spacer />
               <v-btn v-if="parentId" size="small" variant="tonal" prepend-icon="mdi-file-tree" @click="openParent">Elterntransaktion</v-btn>
+              <v-btn
+                color="primary"
+                size="small"
+                variant="flat"
+                :loading="savingExtracted"
+                prepend-icon="mdi-content-save"
+                @click="void saveExtractedData()"
+              >
+                Speichern
+              </v-btn>
             </v-card-title>
             <v-card-text>
-              <v-table density="compact" class="bg-transparent">
-                <tbody>
-                  <tr>
-                    <td class="text-medium-emphasis" style="width: 40%">Händler / Lieferant</td>
-                    <td>{{ extracted.merchantName ?? "–" }}</td>
-                  </tr>
-                  <tr>
-                    <td class="text-medium-emphasis">Belegdatum</td>
-                    <td>{{ extracted.date ?? "–" }}</td>
-                  </tr>
-                  <tr>
-                    <td class="text-medium-emphasis">Summe (extrahiert)</td>
-                    <td>{{ extracted.total != null ? formatMoney(extracted.total) : "–" }}</td>
-                  </tr>
-                  <tr>
-                    <td class="text-medium-emphasis">Währung</td>
-                    <td>{{ extracted.currency }}</td>
-                  </tr>
-                  <tr>
-                    <td class="text-medium-emphasis">Modell-Konfidenz</td>
-                    <td>
-                      {{
-                        extracted.confidence != null && Number.isFinite(extracted.confidence)
-                          ? `${(extracted.confidence * 100).toFixed(0)}\u00a0%`
-                          : "–"
-                      }}
-                    </td>
-                  </tr>
-                </tbody>
-              </v-table>
-              <div v-if="extracted.lineItems?.length" class="text-subtitle-2 mt-4 mb-1">Positionen (KI-Rohdaten)</div>
-              <v-table v-if="extracted.lineItems?.length" density="compact" class="text-body-2">
-                <thead>
-                  <tr>
-                    <th>Beschreibung</th>
-                    <th class="text-end">Betrag</th>
-                    <th>Kategorie-Hinweis</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr v-for="(li, idx) in extracted.lineItems" :key="idx">
-                    <td>{{ li.description }}</td>
-                    <td class="text-end">{{ formatMoney(li.amount) }}</td>
-                    <td>{{ li.categoryHint ?? "–" }}</td>
-                  </tr>
-                </tbody>
-              </v-table>
+              <v-row dense>
+                <v-col cols="12" sm="6">
+                  <v-text-field
+                    v-model="extractedForm.merchantName"
+                    label="Händler / Lieferant"
+                    variant="outlined"
+                    density="compact"
+                    hide-details
+                  />
+                </v-col>
+                <v-col cols="12" sm="6">
+                  <v-text-field v-model="extractedForm.date" label="Belegdatum" type="date" variant="outlined" density="compact" hide-details />
+                </v-col>
+                <v-col cols="12" sm="6">
+                  <v-text-field
+                    v-model="extractedForm.total"
+                    label="Summe (extrahiert)"
+                    variant="outlined"
+                    density="compact"
+                    hide-details
+                    hint="Leer lassen, wenn unbekannt"
+                    persistent-hint
+                  />
+                </v-col>
+                <v-col cols="12" sm="6">
+                  <v-text-field v-model="extractedForm.currency" label="Währung" maxlength="3" variant="outlined" density="compact" hide-details />
+                </v-col>
+              </v-row>
             </v-card-text>
           </v-card>
 
+          <v-alert v-if="sumMismatchWarning" type="warning" variant="tonal" density="comfortable" class="mb-4">
+            {{ sumMismatchWarning }}
+          </v-alert>
+
           <v-card v-if="childRows.length" rounded="lg" border>
             <v-card-title class="d-flex align-center flex-wrap ga-2">
-              <span>Erzeugte Untertransaktionen</span>
+              <span>Positionen</span>
               <v-spacer />
+              <v-btn v-if="parentId && !extractedForm" size="small" variant="tonal" prepend-icon="mdi-file-tree" @click="openParent">
+                Elterntransaktion
+              </v-btn>
               <v-btn
                 color="primary"
                 variant="tonal"
@@ -393,7 +571,11 @@ function categoryHintForIndex(i: number): string | null {
                 Alle speichern
               </v-btn>
             </v-card-title>
-            <v-card-text>
+            <v-card-text class="text-body-2 text-medium-emphasis pb-2">
+              Erzeugte Untertransaktionen mit den zugehörigen KI-Rohzeilen (falls vorhanden) — eine gemeinsame Liste pro
+              Position.
+            </v-card-text>
+            <v-card-text class="pt-0">
               <v-expansion-panels multiple variant="accordion">
                 <v-expansion-panel v-for="(row, index) in childRows" :key="row.tx.id">
                   <v-expansion-panel-title class="text-body-2">
@@ -404,9 +586,41 @@ function categoryHintForIndex(i: number): string | null {
                     <span class="text-no-wrap me-2">{{ formatMoney(row.tx.amount) }} {{ row.tx.currency }}</span>
                   </v-expansion-panel-title>
                   <v-expansion-panel-text>
-                    <div v-if="categoryHintForIndex(index)" class="text-caption text-medium-emphasis mb-2">
-                      KI-Kategoriehinweis: {{ categoryHintForIndex(index) }}
-                    </div>
+                    <v-sheet v-if="extractedForm && extractedForm.lineItems[index]" border rounded class="pa-3 mb-4 text-body-2">
+                      <div class="text-caption text-medium-emphasis mb-2">KI-Rohdaten (bearbeitbar)</div>
+                      <v-row dense>
+                        <v-col cols="12">
+                          <v-text-field
+                            v-model="extractedForm.lineItems[index].description"
+                            label="Beschreibung"
+                            variant="outlined"
+                            density="compact"
+                            hide-details
+                          />
+                        </v-col>
+                        <v-col cols="12" sm="6">
+                          <v-text-field
+                            v-model="extractedForm.lineItems[index].amount"
+                            label="Betrag"
+                            variant="outlined"
+                            density="compact"
+                            hide-details
+                          />
+                        </v-col>
+                        <v-col cols="12" sm="6">
+                          <v-text-field
+                            v-model="extractedForm.lineItems[index].categoryHint"
+                            label="Kategorie-Hinweis"
+                            variant="outlined"
+                            density="compact"
+                            hide-details
+                          />
+                        </v-col>
+                      </v-row>
+                      <p class="text-caption text-medium-emphasis mt-2 mb-0">
+                        Änderungen hier speichern mit „Speichern“ unter „Geparste Belegdaten“.
+                      </p>
+                    </v-sheet>
 
                     <v-row dense>
                       <v-col cols="12" sm="6">
@@ -506,7 +720,16 @@ function categoryHintForIndex(i: number): string | null {
                       </tbody>
                     </v-table>
 
-                    <div class="d-flex justify-end mt-3">
+                    <div class="d-flex flex-wrap justify-end ga-2 mt-3">
+                      <v-btn
+                        color="error"
+                        variant="text"
+                        prepend-icon="mdi-delete-outline"
+                        :disabled="savingAll || savingChildId === row.tx.id"
+                        @click="openDeleteChildDialog(row)"
+                      >
+                        Position löschen
+                      </v-btn>
                       <v-btn
                         color="primary"
                         :loading="savingChildId === row.tx.id"
@@ -527,6 +750,41 @@ function categoryHintForIndex(i: number): string | null {
           </v-alert>
         </v-col>
       </v-row>
+
+      <v-dialog v-model="deleteReceiptOpen" max-width="440" content-class="nx-dialog-panel">
+        <v-card variant="elevated" color="surface" rounded="lg" elevation="8">
+          <v-card-title>Beleg löschen?</v-card-title>
+          <v-card-text class="text-body-2">
+            Dieser Beleg und alle zugehörigen Transaktionen werden unwiderruflich entfernt.
+          </v-card-text>
+          <v-card-actions>
+            <v-spacer />
+            <v-btn variant="text" :disabled="deleteReceiptLoading" @click="deleteReceiptOpen = false">Abbrechen</v-btn>
+            <v-btn color="error" variant="flat" :loading="deleteReceiptLoading" @click="void confirmDeleteReceipt()">
+              Löschen
+            </v-btn>
+          </v-card-actions>
+        </v-card>
+      </v-dialog>
+
+      <v-dialog v-model="deleteChildDialogOpen" max-width="420" content-class="nx-dialog-panel">
+        <v-card v-if="deleteChildTarget" variant="elevated" color="surface" rounded="lg" elevation="8">
+          <v-card-title>Position löschen?</v-card-title>
+          <v-card-text class="text-body-2">
+            Diese Untertransaktion wird entfernt. Der Beleg und die übrigen Positionen bleiben erhalten.
+            <div v-if="deleteChildTarget.form.description.trim()" class="mt-2 text-medium-emphasis">
+              „{{ deleteChildTarget.form.description.trim() }}“
+            </div>
+          </v-card-text>
+          <v-card-actions>
+            <v-spacer />
+            <v-btn variant="text" :disabled="deleteChildLoading" @click="deleteChildTarget = null">Abbrechen</v-btn>
+            <v-btn color="error" variant="flat" :loading="deleteChildLoading" @click="void confirmDeleteChild()">
+              Löschen
+            </v-btn>
+          </v-card-actions>
+        </v-card>
+      </v-dialog>
     </template>
   </div>
 </template>

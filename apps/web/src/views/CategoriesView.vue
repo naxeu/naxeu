@@ -103,7 +103,7 @@ onMounted(load);
       </v-col>
     </v-row>
 
-    <v-dialog v-model="dialog" max-width="500">
+    <v-dialog v-model="dialog" max-width="500" content-class="nx-dialog-panel">
       <v-card>
         <v-card-title>{{ editing ? "Kategorie bearbeiten" : "Neue Kategorie" }}</v-card-title>
         <v-card-text>

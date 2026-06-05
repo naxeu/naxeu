@@ -95,6 +95,35 @@ function openFilePicker(): void {
 function openCameraPicker(): void {
   cameraInputRef.value?.click();
 }
+
+const deleteTarget = ref<AttachmentRow | null>(null);
+const deleteDialogOpen = computed({
+  get: () => deleteTarget.value != null,
+  set: (v: boolean) => {
+    if (!v) deleteTarget.value = null;
+  },
+});
+const deleteLoading = ref(false);
+
+function openDeleteDialog(a: AttachmentRow): void {
+  deleteTarget.value = a;
+}
+
+async function confirmDeleteAttachment(): Promise<void> {
+  const a = deleteTarget.value;
+  if (!a) return;
+  deleteLoading.value = true;
+  error.value = "";
+  try {
+    await api(`/attachments/${a.id}`, { method: "DELETE" });
+    deleteTarget.value = null;
+    await loadList();
+  } catch (e) {
+    error.value = e instanceof Error ? e.message : "Löschen fehlgeschlagen";
+  } finally {
+    deleteLoading.value = false;
+  }
+}
 </script>
 
 <template>
@@ -146,9 +175,19 @@ function openCameraPicker(): void {
     <v-row v-if="list.length">
       <v-col v-for="a in list" :key="a.id" cols="6" sm="4" md="3" lg="2">
         <v-card rounded="lg" border class="nx-att-card" :to="{ name: 'attachment-detail', params: { id: a.id } }">
-          <AttachmentThumbnail :attachment-id="a.id" :mime-type="a.mimeType" />
-          <v-card-text class="pa-2 pt-1">
-            <div class="text-caption text-truncate" :title="a.fileName">{{ a.fileName }}</div>
+          <AttachmentThumbnail :attachment-id="a.id" :mime-type="a.mimeType" variant="list" />
+          <v-card-text class="pa-2 pt-1 position-relative">
+            <v-btn
+              icon
+              size="x-small"
+              variant="text"
+              color="error"
+              class="nx-att-del"
+              aria-label="Beleg löschen"
+              @click.stop.prevent="openDeleteDialog(a)"
+            >
+              <v-icon size="small">mdi-delete-outline</v-icon>
+            </v-btn>
             <div class="text-caption text-medium-emphasis">{{ formatDate(a.createdAt) }}</div>
             <v-chip :color="statusColor(a.status)" size="x-small" class="mt-1" label>{{ a.status }}</v-chip>
           </v-card-text>
@@ -156,6 +195,23 @@ function openCameraPicker(): void {
       </v-col>
     </v-row>
     <v-alert v-else type="info" variant="tonal">Noch keine Belege hochgeladen.</v-alert>
+
+    <v-dialog v-model="deleteDialogOpen" max-width="420" content-class="nx-dialog-panel">
+      <v-card v-if="deleteTarget" variant="elevated" color="surface" rounded="lg" elevation="8">
+        <v-card-title>Beleg löschen?</v-card-title>
+        <v-card-text class="text-body-2">
+          Der Beleg wird unwiderruflich gelöscht. Alle zugehörigen Transaktionen (Beleg-Container und Positionen) werden
+          mit entfernt.
+        </v-card-text>
+        <v-card-actions>
+          <v-spacer />
+          <v-btn variant="text" :disabled="deleteLoading" @click="deleteTarget = null">Abbrechen</v-btn>
+          <v-btn color="error" variant="flat" :loading="deleteLoading" @click="void confirmDeleteAttachment()">
+            Löschen
+          </v-btn>
+        </v-card-actions>
+      </v-card>
+    </v-dialog>
   </div>
 </template>
 
@@ -164,5 +220,11 @@ function openCameraPicker(): void {
   text-decoration: none;
   color: inherit;
   cursor: pointer;
+}
+.nx-att-del {
+  position: absolute;
+  top: 2px;
+  right: 2px;
+  z-index: 2;
 }
 </style>

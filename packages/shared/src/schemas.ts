@@ -260,6 +260,12 @@ export const extractedAttachmentSchema = z.object({
 });
 export type ExtractedAttachment = z.infer<typeof extractedAttachmentSchema>;
 
+/** PATCH `/attachments/:id` — replace structured extraction JSON after manual correction. */
+export const patchAttachmentExtractedSchema = z.object({
+  extractedData: extractedAttachmentSchema,
+});
+export type PatchAttachmentExtractedInput = z.infer<typeof patchAttachmentExtractedSchema>;
+
 export const monthlySummarySchema = z.object({
   summary: z.string(),
   highlights: z.array(z.string()),

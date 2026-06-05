@@ -96,6 +96,8 @@ onMounted(load);
       <code>attachment.created</code>). Du brauchst dafür keine eigene Regel anzulegen. Der Trigger
       <code>attachment.created</code> bleibt für eigene Regeln verfügbar (zusätzliche Aktionen auf Basis von Beleg-Events).
     </v-alert>
+
+    <v-row>
       <v-col cols="12" md="7">
         <v-card rounded="lg" border>
           <v-card-title>Regeln</v-card-title>
@@ -136,7 +138,7 @@ onMounted(load);
       </v-col>
     </v-row>
 
-    <v-dialog v-model="dialog" max-width="560">
+    <v-dialog v-model="dialog" max-width="560" content-class="nx-dialog-panel">
       <v-card>
         <v-card-title>Neue Automationsregel</v-card-title>
         <v-card-text>

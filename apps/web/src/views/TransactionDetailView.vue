@@ -362,7 +362,7 @@ watch(id, () => {
       </v-col>
     </v-row>
 
-    <v-dialog v-model="addChildOpen" max-width="500">
+    <v-dialog v-model="addChildOpen" max-width="500" content-class="nx-dialog-panel">
       <v-card>
         <v-card-title>Untertransaktion hinzufügen</v-card-title>
         <v-card-text>

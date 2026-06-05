@@ -1,15 +1,32 @@
 import { randomUUID } from "node:crypto";
+import { createReadStream } from "node:fs";
 import { mkdir, writeFile } from "node:fs/promises";
-import { join } from "node:path";
-import { and, eq } from "drizzle-orm";
+import { join, relative, resolve, sep } from "node:path";
+import { and, desc, eq } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
-import { attachments, categories, transactions } from "@naxeu/db/schema";
-import { createTransaction, emitEvent } from "@naxeu/core";
-import { createTransactionSchema } from "@naxeu/shared";
+import { attachments } from "@naxeu/db/schema";
+import {
+  emitEvent,
+  getTransactionTree,
+  loadProcessedAttachmentAnalysis,
+  markAttachmentAnalysisFailed,
+  runAttachmentAnalysis,
+  tryClaimAttachmentForAnalysis,
+} from "@naxeu/core";
 
 export async function registerAttachmentRoutes(app: FastifyInstance): Promise<void> {
   const ctx = app.ctx;
   const storageDir = app.env.storageDir;
+
+  app.get("/attachments", { preHandler: app.authenticate }, async (request) => {
+    const rows = await ctx.db
+      .select()
+      .from(attachments)
+      .where(eq(attachments.workspaceId, request.auth.workspaceId))
+      .orderBy(desc(attachments.createdAt))
+      .limit(200);
+    return { attachments: rows };
+  });
 
   app.post("/attachments", { preHandler: app.authenticate }, async (request, reply) => {
     const file = await request.file();
@@ -55,11 +72,15 @@ export async function registerAttachmentRoutes(app: FastifyInstance): Promise<vo
       .where(and(eq(attachments.id, id), eq(attachments.workspaceId, request.auth.workspaceId)))
       .limit(1);
     if (!row) return reply.code(404).send({ error: "not_found", message: "Attachment not found" });
-    return { attachment: row };
+    const transactionTree =
+      row.transactionId != null
+        ? await getTransactionTree(ctx, row.transactionId, request.auth.workspaceId)
+        : null;
+    return { attachment: row, transactionTree };
   });
 
-  // Runs (mock) AI extraction and turns line items into child transactions.
-  app.post("/attachments/:id/analyze", { preHandler: app.authenticate }, async (request, reply) => {
+  /** Binary file for previews (same auth as API). */
+  app.get("/attachments/:id/file", { preHandler: app.authenticate }, async (request, reply) => {
     const { id } = request.params as { id: string };
     const [row] = await ctx.db
       .select()
@@ -68,87 +89,60 @@ export async function registerAttachmentRoutes(app: FastifyInstance): Promise<vo
       .limit(1);
     if (!row) return reply.code(404).send({ error: "not_found", message: "Attachment not found" });
 
-    await ctx.db.update(attachments).set({ status: "processing" }).where(eq(attachments.id, id));
-
-    const extracted = await ctx.ai.extractAttachment({
-      fileName: row.fileName,
-      extractedText: row.extractedText,
-    });
-
-    // Determine / create the parent transaction the items hang off of.
-    let parentId = row.transactionId;
-    if (!parentId) {
-      const parent = await createTransaction(
-        ctx,
-        createTransactionSchema.parse({
-          type: "expense",
-          status: "pending_review",
-          date: extracted.date ?? new Date().toISOString().slice(0, 10),
-          amount: extracted.total ?? "0",
-          currency: extracted.currency,
-          merchantName: extracted.merchantName,
-          description: `Beleg ${row.fileName}`,
-          source: "attachment",
-          affectsAccountBalance: true,
-          affectsBudget: false,
-        }),
-        { workspaceId: request.auth.workspaceId, userId: request.auth.userId },
-      );
-      parentId = parent.id;
+    const storageRoot = resolve(storageDir);
+    const absoluteFile = resolve(storageRoot, row.storagePath);
+    const rel = relative(storageRoot, absoluteFile);
+    if (rel.startsWith("..") || rel.includes(`..${sep}`)) {
+      return reply.code(400).send({ error: "validation_error", message: "Invalid attachment storage path" });
     }
 
-    // Map category hints to existing categories by name.
-    const cats = await ctx.db
-      .select()
-      .from(categories)
-      .where(eq(categories.workspaceId, request.auth.workspaceId));
-    const catByName = new Map(cats.map((c) => [c.name.toLowerCase(), c.id] as const));
+    reply.header("Content-Type", row.mimeType || "application/octet-stream");
+    return reply.send(createReadStream(absoluteFile));
+  });
 
-    const children = [];
-    for (const item of extracted.lineItems) {
-      const categoryId = item.categoryHint ? catByName.get(item.categoryHint.toLowerCase()) ?? null : null;
-      const childTx = await createTransaction(
-        ctx,
-        createTransactionSchema.parse({
-          parentId,
-          type: "item",
-          status: "confirmed",
-          date: extracted.date ?? new Date().toISOString().slice(0, 10),
-          amount: item.amount,
-          currency: extracted.currency,
-          categoryId,
-          merchantName: item.description,
-          description: item.description,
-          source: "attachment",
-          // Line items affect budget, not the account balance.
-          affectsAccountBalance: false,
-          affectsBudget: true,
-        }),
-        { workspaceId: request.auth.workspaceId, userId: request.auth.userId, skipEvent: true },
-      );
-      children.push(childTx);
+  app.post("/attachments/:id/analyze", { preHandler: app.authenticate }, async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const ws = request.auth.workspaceId;
+
+    const claimed = await tryClaimAttachmentForAnalysis(ctx, id, ws);
+    if (!claimed) {
+      const cached = await loadProcessedAttachmentAnalysis(ctx, id, ws);
+      if (cached) {
+        return {
+          attachment: cached.attachment,
+          parentId: cached.parentId,
+          children: cached.children,
+        };
+      }
+      const [cur] = await ctx.db
+        .select({ status: attachments.status })
+        .from(attachments)
+        .where(and(eq(attachments.id, id), eq(attachments.workspaceId, ws)))
+        .limit(1);
+      if (cur?.status === "processing") {
+        return reply.code(409).send({ error: "conflict", message: "Analyse läuft bereits" });
+      }
+      return reply.code(409).send({ error: "conflict", message: "Analyse für diesen Beleg ist nicht möglich" });
     }
 
-    const [updated] = await ctx.db
-      .update(attachments)
-      .set({
-        status: "processed",
-        extractedText: `Mock-Extraktion von ${row.fileName}`,
-        extractedData: extracted,
-        transactionId: parentId,
-      })
-      .where(eq(attachments.id, id))
-      .returning();
-
-    await ctx.realtime.publish({
-      type: "attachment.updated",
-      entityType: "attachment",
-      entityId: id,
-      workspaceId: request.auth.workspaceId,
-      timestamp: new Date().toISOString(),
-      meta: { status: "processed" },
-    });
-
-    return { attachment: updated, parentId, children };
+    const userId = request.auth.userId;
+    try {
+      const result = await runAttachmentAnalysis(ctx, {
+        storageDir,
+        attachmentId: id,
+        workspaceId: ws,
+        userId,
+      });
+      return {
+        attachment: result.attachment,
+        parentId: result.parentId,
+        children: result.children,
+        extractionSource: result.extractionSource,
+      };
+    } catch (err) {
+      await markAttachmentAnalysisFailed(ctx, id, ws);
+      const message = err instanceof Error ? err.message : "Analyse fehlgeschlagen";
+      return reply.code(500).send({ error: "server_error", message });
+    }
   });
 }

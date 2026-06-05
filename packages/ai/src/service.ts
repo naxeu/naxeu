@@ -17,7 +17,25 @@ import {
   heuristicExtractAttachment,
   heuristicParseQuickInput,
 } from "./heuristics.js";
-import { generateValidatedObject, resolveModel } from "./provider.js";
+import {
+  generateValidatedObject,
+  generateValidatedObjectWithMessages,
+  resolveModel,
+} from "./provider.js";
+
+/** Lists workspace budget categories for receipt extraction prompts. */
+export function formatBudgetCategoriesForPrompt(names: readonly string[]): string {
+  const unique = [...new Set(names.map((n) => n.trim()).filter(Boolean))].sort((a, b) =>
+    a.localeCompare(b, undefined, { sensitivity: "base" }),
+  );
+  if (unique.length === 0) {
+    return "There are no expense budget categories in this workspace yet. Set categoryHint to null for every line item.";
+  }
+  return [
+    "Allowed values for each line item's categoryHint (verbatim copy of exactly ONE list entry — pick the single best-fitting category for that product or service; use null only if none of these fits at all):",
+    ...unique.map((n) => `- ${n}`),
+  ].join("\n");
+}
 
 function clampImportColumnGuess(g: ImportColumnMappingGuess, n: number): ImportColumnMappingGuess {
   if (n <= 0) return { ...g, needsUserConfirmation: true };
@@ -50,6 +68,9 @@ export interface SummaryInput {
   totalExpense: string;
   topCategories: Array<{ name: string; amount: string }>;
 }
+
+/** Whether Beleg-Extraktion used a real LLM vs. heuristics (API responses surface this). */
+export type AttachmentExtractionSource = "model" | "heuristic";
 
 /**
  * Fachliche AI-Schicht. Business logic talks to this class only; it never sees
@@ -163,20 +184,82 @@ export class AiService {
   async extractAttachment(args: {
     fileName: string;
     extractedText?: string | null;
-  }): Promise<ExtractedAttachment> {
+    /** Raw file bytes for vision (typically an image/jpeg or image/png receipt photo). */
+    imageBytes?: Buffer | Uint8Array | null;
+    mimeType?: string | null;
+    /** Workspace expense category names — model picks best-fitting list entry per line item (verbatim). */
+    budgetCategoryNames?: readonly string[] | null;
+  }): Promise<{ extracted: ExtractedAttachment; source: AttachmentExtractionSource }> {
     if (this.usesMock("attachmentExtraction")) {
-      return heuristicExtractAttachment(args.fileName, args.extractedText);
+      return {
+        extracted: heuristicExtractAttachment(args.fileName, args.extractedText),
+        source: "heuristic",
+      };
     }
+    const mime = (args.mimeType ?? "").toLowerCase();
+    const canVision =
+      mime.startsWith("image/") &&
+      args.imageBytes != null &&
+      args.imageBytes.byteLength > 0 &&
+      args.imageBytes.byteLength <= 20 * 1024 * 1024;
+
     try {
       const model = this.resolveTaskModel("attachmentExtraction");
-      return await generateValidatedObject(
+      const categoryBlock = formatBudgetCategoriesForPrompt(args.budgetCategoryNames ?? []);
+      const system =
+        "You extract receipt or invoice data into structured line items. Read amounts and dates from the document. Amounts are positive strings with exactly 2 decimal places. " +
+        "For every line item you MUST choose the single best-matching budget category from the list in the user message: set categoryHint to that entry's text with identical spelling and casing (verbatim). " +
+        "If and only if no category in the list is a reasonable fit for that line, set categoryHint to null. Never invent a category name that is not in the list.";
+
+      if (canVision) {
+        const hints: string[] = [`File name: ${args.fileName}`];
+        const ocr = args.extractedText?.trim();
+        if (ocr) hints.push(`Pre-extracted text / OCR (may be incomplete):\n${ocr}`);
+        hints.push(
+          "Extract merchant, date, total, currency, and line items from the receipt image. Use the image as the source of truth.",
+        );
+        hints.push(categoryBlock);
+        hints.push(
+          "For each line item, pick the single best-matching category from that bulleted list and copy that label verbatim into categoryHint (or null if none fits).",
+        );
+        const extracted = (await generateValidatedObjectWithMessages(
+          model,
+          extractedAttachmentSchema,
+          system,
+          [
+            {
+              role: "user",
+              content: [
+                { type: "text", text: hints.join("\n\n") },
+                { type: "image", image: args.imageBytes!, mimeType: mime || undefined },
+              ],
+            },
+          ],
+        )) as ExtractedAttachment;
+        return { extracted, source: "model" };
+      }
+
+      const extracted = (await generateValidatedObject(
         model,
         extractedAttachmentSchema,
-        `Extract merchant, date, total and line items from this receipt text:\n${args.extractedText ?? args.fileName}`,
-        "You extract receipt data into structured line items. Amounts are positive strings with 2 decimals.",
+        `${categoryBlock}\n\nExtract merchant, date, total and line items from this receipt text:\n${args.extractedText ?? args.fileName}`,
+        system,
+      )) as ExtractedAttachment;
+      return { extracted, source: "model" };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      console.error(
+        "[naxeu][AiService.extractAttachment]",
+        JSON.stringify({
+          canVision,
+          mime,
+          message,
+        }),
       );
-    } catch {
-      return heuristicExtractAttachment(args.fileName, args.extractedText);
+      return {
+        extracted: heuristicExtractAttachment(args.fileName, args.extractedText),
+        source: "heuristic",
+      };
     }
   }
 

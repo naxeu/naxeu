@@ -2,6 +2,9 @@
 #
 #   docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
 #
+# API/worker load optional `env_file: .env` (when present). AI and provider keys are referenced
+# from `config/ai.yml` via `${VAR}` / `${VAR:-default}`; `.env` supplies the values at runtime.
+#
 # Rebuild the dev image when pnpm-lock.yaml or root manifests change; source edits
 # under ./apps and ./packages apply immediately via bind mounts.
 
@@ -10,8 +13,13 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.dev
+    env_file:
+      - path: .env
+        required: false
     environment:
       NODE_ENV: development
+      # Must match worker + volume so Beleg-Dateien vom Worker gelesen werden können
+      STORAGE_DIR: /data/storage
     volumes:
       - naxeu_storage:/data/storage
       - ./apps:/app/apps
@@ -39,9 +47,14 @@ services:
     build:
       context: .
       dockerfile: Dockerfile.dev
+    env_file:
+      - path: .env
+        required: false
     environment:
       NODE_ENV: development
+      STORAGE_DIR: /data/storage
     volumes:
+      - naxeu_storage:/data/storage
       - ./apps:/app/apps
       - ./packages:/app/packages
       - ./config:/app/config

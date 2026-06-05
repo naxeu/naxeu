@@ -1,8 +1,11 @@
 <script setup lang="ts">
 import { onMounted, ref, watch } from "vue";
+import { useRouter } from "vue-router";
 import { api } from "@/api/client";
 import { useRealtimeStore } from "@/stores/realtime";
 import { formatDate, severityColor } from "@/utils/format";
+
+const router = useRouter();
 
 interface Msg {
   id: string;
@@ -13,6 +16,8 @@ interface Msg {
   status: string;
   createdAt: string;
   deliveredVia: string | null;
+  actionUrl: string | null;
+  actionLabel: string | null;
 }
 
 const realtime = useRealtimeStore();
@@ -70,6 +75,11 @@ async function savePref(): Promise<void> {
 }
 onMounted(loadPrefs);
 void tab;
+
+function openMessageAction(m: Msg): void {
+  if (!m.actionUrl) return;
+  void router.push(m.actionUrl);
+}
 </script>
 
 <template>
@@ -111,7 +121,10 @@ void tab;
     <v-card rounded="lg" border>
       <v-list>
         <template v-for="m in messages" :key="m.id">
-          <v-list-item :class="{ 'font-weight-bold': m.status === 'unread' }">
+          <v-list-item
+            :class="{ 'font-weight-bold': m.status === 'unread', 'nx-msg-row': !!m.actionUrl }"
+            @click="m.actionUrl ? openMessageAction(m) : undefined"
+          >
             <template #prepend>
               <v-avatar :color="severityColor[m.severity]" size="36"><v-icon color="white">mdi-bell</v-icon></v-avatar>
             </template>
@@ -124,9 +137,19 @@ void tab;
                   <v-chip size="x-small" class="ml-1" variant="outlined">{{ m.status }}</v-chip>
                 </div>
                 <small class="text-medium-emphasis">{{ formatDate(m.createdAt) }} <span v-if="m.deliveredVia">· via {{ m.deliveredVia }}</span></small>
-                <div>
-                  <v-btn v-if="m.status === 'unread'" size="x-small" variant="text" @click="markRead(m)">Gelesen</v-btn>
-                  <v-btn v-if="m.status !== 'dismissed'" size="x-small" variant="text" @click="dismiss(m)">Verwerfen</v-btn>
+                <div class="d-flex flex-wrap justify-end ga-1">
+                  <v-btn
+                    v-if="m.actionUrl"
+                    size="x-small"
+                    color="primary"
+                    variant="tonal"
+                    prepend-icon="mdi-open-in-app"
+                    @click.stop="openMessageAction(m)"
+                  >
+                    {{ m.actionLabel ?? "Öffnen" }}
+                  </v-btn>
+                  <v-btn v-if="m.status === 'unread'" size="x-small" variant="text" @click.stop="markRead(m)">Gelesen</v-btn>
+                  <v-btn v-if="m.status !== 'dismissed'" size="x-small" variant="text" @click.stop="dismiss(m)">Verwerfen</v-btn>
                 </div>
               </div>
             </template>
@@ -138,3 +161,9 @@ void tab;
     </v-card>
   </div>
 </template>
+
+<style scoped>
+.nx-msg-row {
+  cursor: pointer;
+}
+</style>

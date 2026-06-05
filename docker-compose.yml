@@ -105,6 +105,7 @@ services:
       DATABASE_URL: postgres://${POSTGRES_USER:-naxeu}:${POSTGRES_PASSWORD:-naxeu}@postgres:5432/${POSTGRES_DB:-naxeu}
       REDIS_URL: redis://redis:6379
       CONFIG_DIR: /app/config
+      STORAGE_DIR: /data/storage
       VAPID_PUBLIC_KEY: ${VAPID_PUBLIC_KEY:-}
       VAPID_PRIVATE_KEY: ${VAPID_PRIVATE_KEY:-}
       VAPID_SUBJECT: ${VAPID_SUBJECT:-mailto:noreply@naxeu.com}
@@ -129,6 +130,10 @@ services:
       AI_TASK_MONTHLY_SUMMARY_MODEL: ${AI_TASK_MONTHLY_SUMMARY_MODEL:-}
       AI_TASK_IMPORT_COLUMN_MAPPING_PROVIDER: ${AI_TASK_IMPORT_COLUMN_MAPPING_PROVIDER:-}
       AI_TASK_IMPORT_COLUMN_MAPPING_MODEL: ${AI_TASK_IMPORT_COLUMN_MAPPING_MODEL:-}
+    volumes:
+      - naxeu_storage:/data/storage
+      - ./config:/app/config:ro
+      - ./branding:/app/branding:ro
 
   web:
     build:

@@ -50,7 +50,15 @@ export async function registerAiRoutes(app: FastifyInstance): Promise<void> {
 
   app.post("/ai/extract-attachment", { preHandler: app.authenticate }, async (request) => {
     const input = extractSchema.parse(request.body);
-    const result = await ctx.ai.extractAttachment(input);
-    return { extracted: result };
+    const catRows = await ctx.db
+      .select()
+      .from(categories)
+      .where(eq(categories.workspaceId, request.auth.workspaceId));
+    const budgetNames = catRows.filter((c) => c.type === "expense" && !c.isArchived).map((c) => c.name);
+    const { extracted, source } = await ctx.ai.extractAttachment({
+      ...input,
+      budgetCategoryNames: budgetNames,
+    });
+    return { extracted, extractionSource: source };
   });
 }

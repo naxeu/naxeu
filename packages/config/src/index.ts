@@ -1,27 +1,9 @@
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, readFileSync } from "node:fs";
+import { join, resolve } from "node:path";
+import { config as dotenvConfig } from "dotenv";
 import { parse as parseYaml } from "yaml";
 import { z } from "zod";
-
-/**
- * Resolves `${VAR}` placeholders inside any string value against the current
- * process environment. Missing variables resolve to an empty string so the
- * app still boots (e.g. an unset OPENAI_API_KEY just yields "").
- */
-function interpolateEnv<T>(value: T): T {
-  if (typeof value === "string") {
-    return value.replace(/\$\{([A-Z0-9_]+)\}/gu, (_m, name: string) => process.env[name] ?? "") as T;
-  }
-  if (Array.isArray(value)) {
-    return value.map((v) => interpolateEnv(v)) as T;
-  }
-  if (value && typeof value === "object") {
-    const out: Record<string, unknown> = {};
-    for (const [k, v] of Object.entries(value)) out[k] = interpolateEnv(v);
-    return out as T;
-  }
-  return value;
-}
+import { interpolateEnv } from "./interpolate-env.js";
 
 function loadYamlFile(dir: string, file: string): unknown {
   const raw = readFileSync(join(dir, file), "utf8");
@@ -95,7 +77,7 @@ function cleanEnvString(s: string | undefined): string | undefined {
 }
 
 /**
- * After `${VAR}` interpolation, missing env vars become `""`. Treat those as
+ * After `${VAR}` / `${VAR:-default}` interpolation, missing env vars become `""`. Treat those as
  * unset for optional provider fields, and keep stable defaults for the
  * `local` (Ollama-compatible) provider.
  */
@@ -136,10 +118,6 @@ const AI_TASK_KEYS = [
   "importColumnMapping",
 ] as const satisfies readonly AiTaskName[];
 
-function camelToUpperSnake(s: string): string {
-  return s.replace(/([a-z\d])([A-Z])/g, "$1_$2").toUpperCase();
-}
-
 /** Parses `AI_ENABLED`; unknown values leave the YAML setting unchanged. */
 function optionalEnvBool(value: string | undefined): boolean | undefined {
   if (value === undefined) return undefined;
@@ -152,54 +130,166 @@ function optionalEnvBool(value: string | undefined): boolean | undefined {
 }
 
 /**
- * Overrides `config/ai.yml` from the environment (after YAML parse + `${VAR}` interpolation).
- *
- * - `AI_ENABLED` — `true` / `false` / `1` / `0` / `yes` / `no` / `on` / `off`
- * - `AI_DEFAULT_PROVIDER` — provider id (e.g. `openai`, `mock`)
- * - `AI_TASK_<UPPER_SNAKE_TASK>_PROVIDER` / `_MODEL` — e.g. `AI_TASK_QUICK_INPUT_PARSING_MODEL=gpt-4o-mini`
- *
- * Provider secrets / endpoints in `ai.yml` use `${VAR}`; see that file and
- * `.env.example` for `OPENAI_*`, `ANTHROPIC_*`, and `OLLAMA_*` names.
+ * After YAML parse + `${VAR}` / `${VAR:-def}` interpolation, scalars may still be
+ * strings (e.g. `enabled: "true"`). Coerce to the shapes expected by {@link aiConfigSchema}.
  */
-function applyAiEnvOverrides(parsed: AiConfig): AiConfig {
-  const e = process.env;
-  const enabled = optionalEnvBool(e.AI_ENABLED);
-  const defaultProvider =
-    e.AI_DEFAULT_PROVIDER !== undefined && e.AI_DEFAULT_PROVIDER.trim() !== ""
-      ? e.AI_DEFAULT_PROVIDER.trim()
-      : undefined;
+function coerceAiYamlForSchema(raw: unknown): unknown {
+  if (!raw || typeof raw !== "object") return raw;
+  const root = raw as Record<string, unknown>;
+  const ai = root.ai;
+  if (!ai || typeof ai !== "object") return raw;
+  const a = ai as Record<string, unknown>;
+
+  const toBool = (v: unknown): boolean => {
+    if (typeof v === "boolean") return v;
+    if (typeof v !== "string") return false;
+    return optionalEnvBool(v) === true;
+  };
+
+  const toScalar = (v: unknown, emptyAs: string): string => {
+    if (typeof v !== "string") return emptyAs;
+    const t = v.trim();
+    return t === "" ? emptyAs : t;
+  };
+
+  const tasksIn = (a.tasks && typeof a.tasks === "object" ? a.tasks : {}) as Record<
+    string,
+    Record<string, unknown>
+  >;
+  const tasksOut: Record<string, { provider: string; model: string }> = {};
+  for (const key of AI_TASK_KEYS) {
+    const row = tasksIn[key];
+    if (!row || typeof row !== "object") {
+      tasksOut[key] = { provider: "mock", model: "mock" };
+      continue;
+    }
+    tasksOut[key] = {
+      provider: toScalar(row.provider, "mock"),
+      model: toScalar(row.model, "mock"),
+    };
+  }
+
+  return {
+    ...root,
+    ai: {
+      ...a,
+      enabled: toBool(a.enabled),
+      defaultProvider: toScalar(a.defaultProvider, "mock"),
+      providers: a.providers,
+      tasks: tasksOut,
+    },
+  };
+}
+
+/**
+ * Applies defaults and global rules after `ai.yml` + env interpolation.
+ *
+ * - If `ai.defaultProvider` is a live provider, tasks still on `mock` inherit it
+ *   (per-task `${AI_TASK_*}` in YAML already wins when non-mock).
+ * - Live provider + model still `mock` → sensible default model.
+ * - Infers `enabled: true` when a live default or task provider is configured,
+ *   unless `AI_ENABLED` is explicitly false in the **process environment** (so
+ *   `AI_ENABLED=` in `.env` still allows inference; only `false`/`0`/… blocks it).
+ */
+function defaultModelForProviderId(
+  providerId: string,
+  providers: AiConfig["ai"]["providers"],
+): string {
+  const p = providers[providerId];
+  if (!p) return "gpt-4o-mini";
+  switch (p.type) {
+    case "mock":
+      return "mock";
+    case "anthropic":
+      return "claude-3-5-haiku-20241022";
+    case "openai":
+      return "gpt-4o-mini";
+    case "openai-compatible":
+      return "llama3.2";
+    default:
+      return "gpt-4o-mini";
+  }
+}
+
+function providerIsNonMock(
+  providers: AiConfig["ai"]["providers"],
+  providerId: string,
+): boolean {
+  const p = providers[providerId];
+  return Boolean(p && p.type !== "mock");
+}
+
+function anyTaskUsesNonMockProvider(
+  tasks: AiConfig["ai"]["tasks"],
+  providers: AiConfig["ai"]["providers"],
+): boolean {
+  return AI_TASK_KEYS.some((key) => providerIsNonMock(providers, tasks[key].provider));
+}
+
+/** If a task points at a real provider but the model is still the YAML placeholder `mock`, pick a sane default (per-task env often sets only `*_PROVIDER`). */
+function ensureLiveTasksHaveNonMockModel(
+  tasks: AiConfig["ai"]["tasks"],
+  providers: AiConfig["ai"]["providers"],
+): AiConfig["ai"]["tasks"] {
+  let next = tasks;
+  for (const key of AI_TASK_KEYS) {
+    const t = next[key];
+    if (t.model !== "mock") continue;
+    if (!providerIsNonMock(providers, t.provider)) continue;
+    next = {
+      ...next,
+      [key]: { ...t, model: defaultModelForProviderId(t.provider, providers) },
+    };
+  }
+  return next;
+}
+
+function applyAiDerivedRules(parsed: AiConfig): AiConfig {
+  /** Only used to detect explicit opt-out; values otherwise come from `ai.yml` + `${…}`. */
+  const enabledEnv = optionalEnvBool(process.env.AI_ENABLED);
 
   let tasks = parsed.ai.tasks;
-  for (const key of AI_TASK_KEYS) {
-    const snake = camelToUpperSnake(key);
-    const pRaw = e[`AI_TASK_${snake}_PROVIDER`];
-    const mRaw = e[`AI_TASK_${snake}_MODEL`];
-    const pTrim = pRaw !== undefined ? pRaw.trim() : "";
-    const mTrim = mRaw !== undefined ? mRaw.trim() : "";
-    if (pTrim !== "" || mTrim !== "") {
+
+  if (
+    parsed.ai.defaultProvider !== "mock" &&
+    providerIsNonMock(parsed.ai.providers, parsed.ai.defaultProvider)
+  ) {
+    for (const key of AI_TASK_KEYS) {
+      const t = tasks[key];
+      if (t.provider !== "mock") continue;
+      const nextModel =
+        t.model === "mock"
+          ? defaultModelForProviderId(parsed.ai.defaultProvider, parsed.ai.providers)
+          : t.model;
       tasks = {
         ...tasks,
-        [key]: {
-          ...tasks[key],
-          ...(pTrim !== "" ? { provider: pTrim } : {}),
-          ...(mTrim !== "" ? { model: mTrim } : {}),
-        },
+        [key]: { ...t, provider: parsed.ai.defaultProvider, model: nextModel },
       };
     }
   }
 
-  if (enabled === undefined && defaultProvider === undefined && tasks === parsed.ai.tasks) {
-    return parsed;
+  tasks = ensureLiveTasksHaveNonMockModel(tasks, parsed.ai.providers);
+
+  let outAi: AiConfig["ai"] = {
+    ...parsed.ai,
+    tasks,
+  };
+
+  if (enabledEnv !== false) {
+    const providers = parsed.ai.providers;
+    const anyLiveTask = anyTaskUsesNonMockProvider(tasks, providers);
+    const defId = outAi.defaultProvider;
+    const defaultLive = defId !== "mock" && providerIsNonMock(providers, defId);
+    if (!outAi.enabled && (anyLiveTask || defaultLive)) {
+      outAi = { ...outAi, enabled: true };
+    }
   }
 
-  return {
-    ai: {
-      ...parsed.ai,
-      ...(enabled !== undefined ? { enabled } : {}),
-      ...(defaultProvider !== undefined ? { defaultProvider } : {}),
-      tasks,
-    },
-  };
+  if (enabledEnv === false) {
+    outAi = { ...outAi, enabled: false };
+  }
+
+  return { ai: outAi };
 }
 
 // --- app.yml ------------------------------------------------------------
@@ -240,15 +330,36 @@ export function configDir(): string {
 }
 
 let cached: NaxeuConfig | null = null;
+let dotenvBootstrapped = false;
+
+/** Loads repo-root `.env` into `process.env` (once) so local `pnpm dev:*` picks up AI_* without exporting in the shell. Skipped under Vitest/CI. */
+function ensureDotenvLoaded(): void {
+  if (dotenvBootstrapped) return;
+  dotenvBootstrapped = true;
+  if (process.env.VITEST === "true" || process.env.CI === "true") return;
+
+  let cur = process.cwd();
+  for (let i = 0; i < 10; i++) {
+    const envPath = join(cur, ".env");
+    if (existsSync(envPath)) {
+      dotenvConfig({ path: envPath });
+      return;
+    }
+    const parent = resolve(cur, "..");
+    if (parent === cur) break;
+    cur = parent;
+  }
+}
 
 /** Loads, interpolates and validates all YAML config files (memoised). */
 export function loadConfig(dir: string = configDir()): NaxeuConfig {
   if (cached) return cached;
-  const aiYaml = aiConfigSchema.parse(loadYamlFile(dir, "ai.yml"));
+  ensureDotenvLoaded();
+  const aiYaml = aiConfigSchema.parse(coerceAiYamlForSchema(loadYamlFile(dir, "ai.yml")));
   const aiNormalized = normalizeAiAfterInterpolation(aiYaml);
   cached = {
     app: appConfigSchema.parse(loadYamlFile(dir, "app.yml")),
-    ai: applyAiEnvOverrides(aiNormalized),
+    ai: applyAiDerivedRules(aiNormalized),
     branding: brandingSchema.parse(loadYamlFile(dir, "branding.yml")),
   };
   return cached;
@@ -257,4 +368,5 @@ export function loadConfig(dir: string = configDir()): NaxeuConfig {
 /** Test helper to clear the memoised config. */
 export function resetConfigCache(): void {
   cached = null;
+  dotenvBootstrapped = false;
 }

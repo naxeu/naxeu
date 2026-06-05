@@ -1,14 +1,12 @@
 # ---------------------------------------------------------------------------
 # Naxeu AI configuration.
 #
-# The MVP ships with `enabled: false` and every task pointing at the `mock`
-# provider, so the whole product works with no real API key. Flip `enabled`
-# to true and repoint individual tasks to a real provider to use live models.
+# Toggle behaviour via environment variables referenced below with `${VAR}`
+# or `${VAR:-default}` (bash-style default when the variable is missing or
+# blank after trim). Values are resolved when the process loads this file; see
+# `packages/config` (`interpolateEnv`, `coerceAiYamlForSchema`, `applyAiDerivedRules`).
 #
-# --- String values: `${VAR}` (UPPER_SNAKE only) ---
-# Resolved at load time; missing vars become "" and are then dropped for
-# optional fields (see packages/config `normalizeAiAfterInterpolation`).
-#
+# --- Secrets / endpoints (optional strings; empty → dropped in normalization) ---
 #   OPENAI_API_KEY          → providers.openai.apiKey
 #   OPENAI_BASE_URL         → optional custom / proxy OpenAI API base URL
 #   ANTHROPIC_API_KEY       → providers.anthropic.apiKey
@@ -16,17 +14,22 @@
 #                             http://localhost:11434/v1)
 #   OLLAMA_API_KEY          → providers.local.apiKey (default if unset/empty: local)
 #
-# --- Overrides without editing this file (applied after YAML + normalization) ---
-#   AI_ENABLED, AI_DEFAULT_PROVIDER
-#   AI_TASK_<UPPER_SNAKE_TASK>_PROVIDER, AI_TASK_<UPPER_SNAKE_TASK>_MODEL
-#   Task keys: QUICK_INPUT_PARSING, TRANSACTION_CATEGORIZATION,
-#              ATTACHMENT_EXTRACTION, MONTHLY_SUMMARY, IMPORT_COLUMN_MAPPING
+# --- Switches (set in `.env` or container env; names mirror `.env.example`) ---
+#   AI_ENABLED              → global on/off (`true` / `false` / `1` / `0` / …)
+#   AI_DEFAULT_PROVIDER     → provider id used for tasks still on `mock` below
+#   AI_TASK_<UPPER_SNAKE>_PROVIDER, AI_TASK_<UPPER_SNAKE>_MODEL
+#       Task suffixes: QUICK_INPUT_PARSING, TRANSACTION_CATEGORIZATION,
+#       ATTACHMENT_EXTRACTION, MONTHLY_SUMMARY, IMPORT_COLUMN_MAPPING
+#
+# If `AI_ENABLED` is unset in the **process environment**, a live default or task
+# provider still turns AI on (`applyAiDerivedRules`). Set `AI_ENABLED=false` there
+# to force heuristics regardless of YAML-interpolated values.
 #
 # See `.env.example` and `docker-compose.yml` for wiring into containers.
 # ---------------------------------------------------------------------------
 ai:
-  enabled: false
-  defaultProvider: mock
+  enabled: "${AI_ENABLED:-false}"
+  defaultProvider: "${AI_DEFAULT_PROVIDER:-mock}"
 
   providers:
     mock:
@@ -48,21 +51,21 @@ ai:
 
   tasks:
     quickInputParsing:
-      provider: mock
-      model: "mock"
+      provider: "${AI_TASK_QUICK_INPUT_PARSING_PROVIDER:-mock}"
+      model: "${AI_TASK_QUICK_INPUT_PARSING_MODEL:-mock}"
 
     transactionCategorization:
-      provider: mock
-      model: "mock"
+      provider: "${AI_TASK_TRANSACTION_CATEGORIZATION_PROVIDER:-mock}"
+      model: "${AI_TASK_TRANSACTION_CATEGORIZATION_MODEL:-mock}"
 
     attachmentExtraction:
-      provider: mock
-      model: "mock"
+      provider: "${AI_TASK_ATTACHMENT_EXTRACTION_PROVIDER:-mock}"
+      model: "${AI_TASK_ATTACHMENT_EXTRACTION_MODEL:-mock}"
 
     monthlySummary:
-      provider: mock
-      model: "mock"
+      provider: "${AI_TASK_MONTHLY_SUMMARY_PROVIDER:-mock}"
+      model: "${AI_TASK_MONTHLY_SUMMARY_MODEL:-mock}"
 
     importColumnMapping:
-      provider: mock
-      model: "mock"
+      provider: "${AI_TASK_IMPORT_COLUMN_MAPPING_PROVIDER:-mock}"
+      model: "${AI_TASK_IMPORT_COLUMN_MAPPING_MODEL:-mock}"

@@ -224,32 +224,29 @@ edits apply after an API restart (no image rebuild for YAML or assets alone).
 
 ### AI — `config/ai.yml`
 
+Switches and per-task provider/model are **declared in YAML** with `${VAR}` or `${VAR:-default}` (same names as in [`.env.example`](./.env.example)); the loader resolves them from `process.env` when the API or worker starts. Secrets and endpoints use the same pattern (`OPENAI_API_KEY`, …).
+
 ```yaml
 ai:
-  enabled: false          # MVP runs fully on the mock provider
-  defaultProvider: mock
+  enabled: "${AI_ENABLED:-false}"
+  defaultProvider: "${AI_DEFAULT_PROVIDER:-mock}"
   providers: { mock, openai, anthropic, local }
   tasks:
-    quickInputParsing:        { provider: mock, model: "mock" }
-    transactionCategorization:{ provider: mock, model: "mock" }
-    attachmentExtraction:     { provider: mock, model: "mock" }
-    monthlySummary:           { provider: mock, model: "mock" }
-    importColumnMapping:      { provider: mock, model: "mock" }
+    quickInputParsing:
+      provider: "${AI_TASK_QUICK_INPUT_PARSING_PROVIDER:-mock}"
+      model: "${AI_TASK_QUICK_INPUT_PARSING_MODEL:-mock}"
+    # … see config/ai.yml for all tasks
 ```
 
-Environment overrides (applied after YAML load; see [`.env.example`](./.env.example)):
-`AI_ENABLED`, `AI_DEFAULT_PROVIDER`, and per-task `AI_TASK_<TASK>_PROVIDER` /
-`AI_TASK_<TASK>_MODEL` (task name in `UPPER_SNAKE`, e.g.
-`AI_TASK_QUICK_INPUT_PARSING_MODEL=gpt-4o-mini`). Docker Compose forwards these
-into `api` and `worker` when set in `.env`.
+After interpolation, `@naxeu/config` applies small derived rules (e.g. tasks still on `mock` inherit `defaultProvider`, `enabled` is inferred when a live provider is configured unless `AI_ENABLED` is explicitly `false` in the **process** environment — see `applyAiDerivedRules` in `packages/config`). Docker Compose forwards `AI_*` and provider keys from `.env` into `api` and `worker`.
 
-To use a real model: set `OPENAI_API_KEY` (or `ANTHROPIC_API_KEY`) in `.env`,
-set `AI_ENABLED=true` and `AI_DEFAULT_PROVIDER` / task env vars (or flip
-`enabled` and tasks in YAML). `${VAR}` placeholders inside YAML are still
+To use a real model: set `OPENAI_API_KEY` (or `ANTHROPIC_API_KEY`) in `.env`, set `AI_ENABLED=true` and `AI_DEFAULT_PROVIDER` / per-task vars (or edit defaults in YAML). `${VAR}` placeholders inside YAML are still
 resolved from the environment; optional `OPENAI_BASE_URL`, `OLLAMA_BASE_URL`,
 and `OLLAMA_API_KEY` are documented in [`config/ai.yml`](./config/ai.yml). The Vercel AI SDK is used **only** inside
 `packages/ai`; business logic never imports it, and all AI output is validated
 with Zod (falling back to heuristics on failure).
+
+**Beleg-Extraktion (`attachmentExtraction`):** Wird genutzt, wenn AI global an ist und dieser Task auf einen echten Provider zeigt. Bei **Bildern** (`image/*`) werden die Dateibytes an ein vision-fähiges Modell geschickt; sonst Text (`extractedText` oder Dateiname). Die **Workspace-Kategorien** werden dem Modell mitgegeben; es setzt pro Position optional `categoryHint` (exakter Kategoriename). Beim Anlegen der Kind-Transaktionen wird das in `categoryId` aufgelöst (exakter Treffer, sonst Heuristik aus der Positionsbeschreibung). Nach dem Upload startet der **Worker** automatisch die Analyse (`attachment.created`); manuell geht es weiterhin mit `POST /attachments/:id/analyze` (z. B. nach `failed`). Es gibt eine **Beleg-Übersicht** in der PWA (`/attachments`) und eine Detailseite pro Beleg. Nach erfolgreicher Analyse erhält der Nutzer eine **Nachricht** (`receipt`) mit Link zum Beleg.
 
 ### App — `config/app.yml`
 
@@ -316,8 +313,8 @@ from the REST API.
 
 Auth (`/auth/register|login|me`), transactions (CRUD + `/children` + `/tree`),
 categories, accounts, `/budgets/monthly?month=YYYY-MM`, messages &
-`/message-preferences`, automation rules & runs, attachments (`/analyze`),
-imports (`POST /imports/analyze`, `POST /imports/commit` — CSV/TSV/Excel, Spaltenerkennung), `/settings`, `/branding`, and AI
+`/message-preferences`, automation rules & runs, attachments (list, file download,
+`/analyze`), imports (`POST /imports/analyze`, `POST /imports/commit` — CSV/TSV/Excel, Spaltenerkennung), `/settings`, `/branding`, and AI
 (`/ai/parse-quick-input`, `/ai/categorize-transaction`, `/ai/extract-attachment`).
 Realtime WebSocket at `ws://host/ws?token=<jwt>`.
 

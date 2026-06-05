@@ -5,6 +5,9 @@ import { api } from "@/api/client";
 import { TransactionStatus, TransactionType } from "@naxeu/shared";
 import { formatDate, formatMoney, statusColor } from "@/utils/format";
 
+type TxTypeValue = (typeof TransactionType.values)[number];
+type TxStatusValue = (typeof TransactionStatus.values)[number];
+
 interface Tx {
   id: string;
   type: string;
@@ -42,20 +45,37 @@ const tree = ref<TreeNode | null>(null);
 const categories = ref<Category[]>([]);
 const accounts = ref<Account[]>([]);
 const addChildOpen = ref(false);
-const childForm = ref({ amount: "", merchantName: "", categoryId: null as string | null, type: "item" });
+const childForm = ref<{
+  amount: string;
+  merchantName: string;
+  categoryId: string | null;
+  type: TxTypeValue;
+}>({ amount: "", merchantName: "", categoryId: null, type: "item" });
 const error = ref("");
 
 const editing = ref(false);
 const saving = ref(false);
-const editForm = ref({
+const editForm = ref<{
+  type: TxTypeValue;
+  amount: string;
+  date: string;
+  merchantName: string;
+  description: string;
+  notes: string;
+  categoryId: string | null;
+  accountId: string | null;
+  status: TxStatusValue;
+  affectsBudget: boolean;
+  affectsAccountBalance: boolean;
+}>({
   type: "expense",
   amount: "",
   date: "",
   merchantName: "",
   description: "",
   notes: "",
-  categoryId: null as string | null,
-  accountId: null as string | null,
+  categoryId: null,
+  accountId: null,
   status: "confirmed",
   affectsBudget: true,
   affectsAccountBalance: true,
@@ -71,7 +91,7 @@ function syncEditForm(): void {
   const t = tx.value;
   if (!t) return;
   editForm.value = {
-    type: t.type,
+    type: t.type as TxTypeValue,
     amount: String(t.amount).replace(",", "."),
     date: typeof t.date === "string" ? t.date.slice(0, 10) : String(t.date).slice(0, 10),
     merchantName: t.merchantName ?? "",
@@ -79,7 +99,7 @@ function syncEditForm(): void {
     notes: t.notes ?? "",
     categoryId: t.categoryId,
     accountId: t.accountId,
-    status: t.status,
+    status: t.status as TxStatusValue,
     affectsBudget: t.affectsBudget,
     affectsAccountBalance: t.affectsAccountBalance,
   };

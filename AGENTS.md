@@ -54,10 +54,19 @@ password hashing to avoid one).
 ## Event pipeline
 
 API writes domain data → inserts an `events` row (pending) → worker claims it
-(`FOR UPDATE SKIP LOCKED`, never lost) → runs matching automation rules
-(depth-guarded via `payload.automationDepth` ≤ `worker.maxAutomationDepth`,
-logged in `automation_runs`) → checks budget thresholds and creates messages →
-publishes minimal realtime events to Redis → API fans out to WebSocket clients.
+(`FOR UPDATE SKIP LOCKED`, never lost) → runs matching automation rules for
+**transaction** events (depth-guarded via `payload.automationDepth` ≤
+`worker.maxAutomationDepth`, logged in `automation_runs`) → checks budget
+thresholds and creates messages → publishes minimal realtime events to Redis →
+API fans out to WebSocket clients.
+
+**`attachment.created`:** the worker **claims** the row (`uploaded`/`failed` →
+`processing`), runs **receipt analysis** (same logic as `POST /attachments/:id/analyze`
+via `packages/core/src/attachment-analysis.ts`), reads bytes from **`STORAGE_DIR`**
+(must be the **same** volume/path as the API), then creates the parent expense +
+line-item children, sets `attachments.status` to `processed`, and sends a
+`receipt` in-app message with `actionUrl` `/attachments/:id`. On failure the
+attachment is marked `failed` and an error message may be sent.
 
 When an automation mutates a transaction, write the change directly (no new
 domain event) to avoid loops.
@@ -76,6 +85,7 @@ export DATABASE_URL="postgres://naxeu:naxeu@localhost:5432/naxeu"
 export REDIS_URL="redis://localhost:6379"     # optional
 export CONFIG_DIR="$PWD/config"
 export JWT_SECRET="dev-secret-at-least-32-characters-long"
+export STORAGE_DIR="$PWD/data/storage"   # same path for API + worker (Beleg-Dateien)
 ```
 
 Run:

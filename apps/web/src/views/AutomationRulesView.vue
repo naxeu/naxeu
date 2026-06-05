@@ -91,7 +91,11 @@ onMounted(load);
       <v-btn color="primary" prepend-icon="mdi-plus" @click="dialog = true">Neue Regel</v-btn>
     </div>
 
-    <v-row>
+    <v-alert type="info" variant="tonal" density="compact" class="mb-4">
+      <strong>Belege:</strong> Sobald ein Beleg hochgeladen wird, verarbeitet der Hintergrund-Worker automatisch die Analyse (Ereignis
+      <code>attachment.created</code>). Du brauchst dafür keine eigene Regel anzulegen. Der Trigger
+      <code>attachment.created</code> bleibt für eigene Regeln verfügbar (zusätzliche Aktionen auf Basis von Beleg-Events).
+    </v-alert>
       <v-col cols="12" md="7">
         <v-card rounded="lg" border>
           <v-card-title>Regeln</v-card-title>

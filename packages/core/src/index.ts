@@ -11,3 +11,5 @@ export * from "./message-service.js";
 export * from "./transaction-service.js";
 export * from "./budget-service.js";
 export * from "./automation-service.js";
+export * from "./attachment-analysis.js";
+export { sniffImageMime } from "./image-sniff.js";

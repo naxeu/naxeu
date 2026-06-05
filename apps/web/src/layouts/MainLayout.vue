@@ -30,6 +30,9 @@ const nav = [
 const appName = computed(() => branding.branding?.app.name ?? "Naxeu");
 const logoSrc = computed(() => resolveBrandingAssetUrl(branding.branding?.app.logo));
 
+const receiptSnackbar = ref(false);
+const receiptSnackbarPath = ref("");
+
 async function loadUnread(): Promise<void> {
   try {
     const res = await api<{ messages: Array<{ status: string }> }>("/messages?status=unread");
@@ -51,11 +54,27 @@ onMounted(async () => {
   await loadUnread();
 });
 
+function openReceiptSnackbar(): void {
+  receiptSnackbar.value = false;
+  const path = receiptSnackbarPath.value;
+  if (path) void router.push(path);
+}
+
 // Refresh unread badge whenever a message event arrives over realtime.
 watch(
   () => realtime.lastEvent,
   (ev) => {
     if (ev && ev.entityType === "message") void loadUnread();
+    if (
+      ev?.type === "message.created" &&
+      ev.entityType === "message" &&
+      ev.meta &&
+      (ev.meta as Record<string, unknown>).type === "receipt" &&
+      typeof (ev.meta as Record<string, unknown>).actionUrl === "string"
+    ) {
+      receiptSnackbarPath.value = (ev.meta as { actionUrl: string }).actionUrl;
+      receiptSnackbar.value = true;
+    }
   },
 );
 </script>
@@ -78,7 +97,7 @@ watch(
         :to="item.to"
         :prepend-icon="item.icon"
         :title="item.title"
-        exact
+        :exact="item.to === '/'"
       >
         <template v-if="item.to === '/messages' && unreadCount > 0" #append>
           <v-badge color="error" :content="unreadCount" inline />
@@ -126,6 +145,14 @@ watch(
       <router-view />
     </v-container>
   </v-main>
+
+  <v-snackbar v-model="receiptSnackbar" :timeout="12_000" color="surface-variant" location="bottom">
+    <span class="text-body-2">Beleganalyse abgeschlossen.</span>
+    <template #actions>
+      <v-btn color="primary" variant="text" @click="openReceiptSnackbar">Zum Beleg</v-btn>
+      <v-btn variant="text" @click="receiptSnackbar = false">Schließen</v-btn>
+    </template>
+  </v-snackbar>
 </template>
 
 <style scoped>

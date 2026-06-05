@@ -17,7 +17,12 @@ const routes: RouteRecordRaw[] = [
       { path: "messages", name: "messages", component: () => import("@/views/MessagesView.vue") },
       { path: "automations", name: "automations", component: () => import("@/views/AutomationRulesView.vue") },
       { path: "import", name: "import", component: () => import("@/views/ImportView.vue") },
-      { path: "attachments", name: "attachments", component: () => import("@/views/AttachmentUploadView.vue") },
+      { path: "attachments", name: "attachments", component: () => import("@/views/AttachmentListView.vue") },
+      {
+        path: "attachments/:id",
+        name: "attachment-detail",
+        component: () => import("@/views/AttachmentDetailView.vue"),
+      },
       { path: "settings", name: "settings", component: () => import("@/views/SettingsView.vue") },
     ],
   },

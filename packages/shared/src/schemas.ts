@@ -35,6 +35,39 @@ const isoDate = z
     return dt.getUTCFullYear() === y && dt.getUTCMonth() === m! - 1 && dt.getUTCDate() === d;
   }, "Not a valid calendar date");
 
+/** Normalises model output for receipt amounts (comma decimals, currency noise). */
+function normalizeReceiptAmountForSchema(v: unknown, mode: "nullable" | "required"): unknown {
+  if (mode === "nullable" && (v === null || v === undefined || v === "")) return null;
+  if (typeof v === "number" && Number.isFinite(v)) return Math.abs(v).toFixed(2);
+  if (typeof v !== "string") return mode === "nullable" ? null : "0.00";
+  const cleaned = v
+    .replace(/€|\u20ac|\s|EUR|Eur/giu, "")
+    .trim()
+    .replace(",", ".");
+  const n = Number.parseFloat(cleaned.replace(/[^0-9.+-]/gu, ""));
+  if (!Number.isFinite(n)) return mode === "nullable" ? null : "0.00";
+  return Math.abs(n).toFixed(2);
+}
+
+function normalizeReceiptCurrencyForSchema(v: unknown): unknown {
+  if (typeof v !== "string") return "EUR";
+  const c = v
+    .trim()
+    .toUpperCase()
+    .replace(/[^A-Z]/gu, "")
+    .slice(0, 3);
+  return /^[A-Z]{3}$/.test(c) ? c : "EUR";
+}
+
+function normalizeConfidence01(v: unknown): unknown {
+  if (typeof v === "number" && Number.isFinite(v)) return Math.max(0, Math.min(1, v));
+  if (typeof v === "string") {
+    const n = Number.parseFloat(v.trim().replace(",", "."));
+    if (Number.isFinite(n)) return Math.max(0, Math.min(1, n));
+  }
+  return v;
+}
+
 // --- Auth ---------------------------------------------------------------
 export const registerSchema = z.object({
   email: z.string().email(),
@@ -206,18 +239,24 @@ export const categorizationSchema = z.object({
 export type CategorizationResult = z.infer<typeof categorizationSchema>;
 
 export const extractedAttachmentSchema = z.object({
-  merchantName: z.string().nullable(),
-  total: moneyString.nullable(),
+  merchantName: z.preprocess(
+    (v) => (v === null || v === undefined || v === "" ? null : String(v)),
+    z.string().nullable(),
+  ),
+  total: z.preprocess((v) => normalizeReceiptAmountForSchema(v, "nullable"), moneyString.nullable()),
   date: isoDate.nullable(),
-  currency: z.string().length(3),
+  currency: z.preprocess(normalizeReceiptCurrencyForSchema, z.string().length(3)),
   lineItems: z.array(
     z.object({
-      description: z.string(),
-      amount: moneyString,
-      categoryHint: z.string().nullable().optional(),
+      description: z.preprocess((v) => (v === null || v === undefined ? "" : String(v)), z.string()),
+      amount: z.preprocess((v) => normalizeReceiptAmountForSchema(v, "required"), moneyString),
+      categoryHint: z.preprocess(
+        (v) => (v === null || v === undefined || String(v).trim() === "" ? null : String(v).trim()),
+        z.string().nullable().optional(),
+      ),
     }),
   ),
-  confidence: z.number().min(0).max(1),
+  confidence: z.preprocess(normalizeConfidence01, z.number().min(0).max(1)),
 });
 export type ExtractedAttachment = z.infer<typeof extractedAttachmentSchema>;
 

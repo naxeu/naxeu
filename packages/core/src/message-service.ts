@@ -87,7 +87,12 @@ export async function createMessage(ctx: ServiceContext, args: CreateMessageArgs
     entityId: msg.id,
     workspaceId: args.workspaceId,
     timestamp: new Date().toISOString(),
-    meta: { severity: args.severity, type: args.type },
+    meta: {
+      severity: args.severity,
+      type: args.type,
+      ...(args.actionUrl ? { actionUrl: args.actionUrl } : {}),
+      ...(args.actionLabel ? { actionLabel: args.actionLabel } : {}),
+    },
   });
 
   const pref = await loadPreference(ctx, args.userId, args.type);

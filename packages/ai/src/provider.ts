@@ -1,6 +1,6 @@
 import { createAnthropic } from "@ai-sdk/anthropic";
 import { createOpenAI } from "@ai-sdk/openai";
-import { generateObject, type LanguageModel } from "ai";
+import { generateObject, type CoreMessage, type LanguageModel } from "ai";
 import type { AiProviderConfig } from "@naxeu/config";
 import type { z } from "zod";
 
@@ -52,6 +52,25 @@ export async function generateValidatedObject<T>(
     schema: schema as z.ZodType<T>,
     system,
     prompt,
+  });
+  return object;
+}
+
+/**
+ * Like {@link generateValidatedObject}, but uses `messages` (e.g. text + image parts).
+ * Cannot combine `prompt` with multimodal content; use this for vision inputs.
+ */
+export async function generateValidatedObjectWithMessages<T>(
+  model: LanguageModel,
+  schema: z.ZodType<T>,
+  system: string,
+  messages: CoreMessage[],
+): Promise<T> {
+  const { object } = await generateObject({
+    model,
+    schema: schema as z.ZodType<T>,
+    system,
+    messages,
   });
   return object;
 }

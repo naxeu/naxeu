@@ -224,7 +224,7 @@ function onPerPageChange(): void {
   white-space: nowrap;
 }
 .tx-tree-foot {
-  background: rgba(0, 0, 0, 0.02);
+  background: rgba(var(--v-theme-on-surface), 0.05);
 }
 .tx-per-page-select {
   max-width: 11rem;

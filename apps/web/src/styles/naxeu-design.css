@@ -82,9 +82,21 @@ body {
   background-color: var(--nx-bg);
 }
 
+html.nx-theme-dark body {
+  color: var(--nx-text);
+  background-color: var(--nx-bg);
+}
+
 .v-application {
-  background: var(--nx-bg) !important;
   font-family: var(--nx-font-sans) !important;
+}
+
+html:not(.nx-theme-dark) .v-application {
+  background: var(--nx-bg) !important;
+}
+
+html.nx-theme-dark .v-application {
+  background: rgb(var(--v-theme-background)) !important;
 }
 
 :focus-visible {
@@ -135,8 +147,26 @@ body {
   border-bottom: 1px solid var(--nx-border) !important;
 }
 
+/* Same chrome as content area — Vuetify often sets `background` on `header` / toolbar with high specificity */
+html.nx-theme-dark header.v-toolbar.nx-app-bar,
+html.nx-theme-dark .v-toolbar.nx-app-bar {
+  background: rgb(var(--v-theme-background)) !important;
+  background-color: rgb(var(--v-theme-background)) !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1) !important;
+}
+
 .nx-main {
   background-color: var(--nx-bg) !important;
+}
+
+html.nx-theme-dark main.v-main.nx-main,
+html.nx-theme-dark .v-main.nx-main {
+  background: rgb(var(--v-theme-background)) !important;
+  background-color: rgb(var(--v-theme-background)) !important;
+}
+
+html.nx-theme-dark main .v-container {
+  background-color: transparent !important;
 }
 
 /* Auth screens */
@@ -144,8 +174,68 @@ body {
   background-color: var(--nx-bg) !important;
 }
 
+html.nx-theme-dark .nx-auth {
+  background-color: rgb(var(--v-theme-background)) !important;
+}
+
 /* Cards: calmer elevation, design radius */
 .nx-card-elevated {
   box-shadow: var(--nx-shadow-sm) !important;
   border: 1px solid var(--nx-border) !important;
+}
+
+html.nx-theme-dark .nx-card-elevated {
+  border-color: rgba(255, 255, 255, 0.12) !important;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.35) !important;
+}
+
+/* --- Shared layout helpers (light + dark) --- */
+.border-t {
+  border-top: thin solid rgba(var(--v-border-color), var(--v-border-opacity));
+}
+
+/* --- Dark mode: mirror design tokens so custom CSS using --nx-* stays consistent --- */
+html.nx-theme-dark {
+  color-scheme: dark;
+  --nx-bg: #0f1713;
+  --nx-surface: #152620;
+  --nx-surface-2: #1a2a22;
+  --nx-border: rgba(255, 255, 255, 0.12);
+  --nx-text: #e8ebe6;
+  --nx-text-muted: #9aa89a;
+  --nx-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.45);
+  --nx-shadow-md: 0 8px 28px rgba(0, 0, 0, 0.5);
+}
+
+html.nx-theme-dark :focus-visible {
+  outline-color: var(--nx-accent-400);
+}
+
+/* Outlined cards / fields pick up Vuetify outline; reinforce for custom density */
+html.nx-theme-dark .v-card--variant-outlined {
+  border-color: rgba(255, 255, 255, 0.14) !important;
+}
+
+html.nx-theme-dark .v-sheet--border {
+  border-color: rgba(255, 255, 255, 0.12) !important;
+}
+
+html.nx-theme-dark .v-table > .v-table__wrapper > table > thead > tr > th {
+  background: rgb(var(--v-theme-surface-variant));
+}
+
+html.nx-theme-dark .v-table > .v-table__wrapper > table > tbody > tr:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+html.nx-theme-dark .v-list-subheader {
+  color: rgba(255, 255, 255, 0.7);
+}
+
+html.nx-theme-dark .v-divider {
+  border-color: rgba(255, 255, 255, 0.1) !important;
+}
+
+html.nx-theme-dark .v-card-actions {
+  border-color: rgba(255, 255, 255, 0.08);
 }

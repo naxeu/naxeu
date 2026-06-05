@@ -4,9 +4,25 @@
 # The MVP ships with `enabled: false` and every task pointing at the `mock`
 # provider, so the whole product works with no real API key. Flip `enabled`
 # to true and repoint individual tasks to a real provider to use live models.
-# `${VAR}` placeholders are resolved from environment variables at load time.
-# Additionally, `AI_ENABLED`, `AI_DEFAULT_PROVIDER`, and `AI_TASK_<TASK>_PROVIDER`
-# / `AI_TASK_<TASK>_MODEL` (see `.env.example`) override the same fields after YAML load.
+#
+# --- String values: `${VAR}` (UPPER_SNAKE only) ---
+# Resolved at load time; missing vars become "" and are then dropped for
+# optional fields (see packages/config `normalizeAiAfterInterpolation`).
+#
+#   OPENAI_API_KEY          → providers.openai.apiKey
+#   OPENAI_BASE_URL         → optional custom / proxy OpenAI API base URL
+#   ANTHROPIC_API_KEY       → providers.anthropic.apiKey
+#   OLLAMA_BASE_URL         → providers.local.baseUrl (default if unset/empty:
+#                             http://localhost:11434/v1)
+#   OLLAMA_API_KEY          → providers.local.apiKey (default if unset/empty: local)
+#
+# --- Overrides without editing this file (applied after YAML + normalization) ---
+#   AI_ENABLED, AI_DEFAULT_PROVIDER
+#   AI_TASK_<UPPER_SNAKE_TASK>_PROVIDER, AI_TASK_<UPPER_SNAKE_TASK>_MODEL
+#   Task keys: QUICK_INPUT_PARSING, TRANSACTION_CATEGORIZATION,
+#              ATTACHMENT_EXTRACTION, MONTHLY_SUMMARY, IMPORT_COLUMN_MAPPING
+#
+# See `.env.example` and `docker-compose.yml` for wiring into containers.
 # ---------------------------------------------------------------------------
 ai:
   enabled: false
@@ -19,6 +35,7 @@ ai:
     openai:
       type: openai
       apiKey: "${OPENAI_API_KEY}"
+      baseUrl: "${OPENAI_BASE_URL}"
 
     anthropic:
       type: anthropic
@@ -26,8 +43,8 @@ ai:
 
     local:
       type: openai-compatible
-      baseUrl: "http://localhost:11434/v1"
-      apiKey: "local"
+      baseUrl: "${OLLAMA_BASE_URL}"
+      apiKey: "${OLLAMA_API_KEY}"
 
   tasks:
     quickInputParsing:
@@ -43,5 +60,9 @@ ai:
       model: "mock"
 
     monthlySummary:
+      provider: mock
+      model: "mock"
+
+    importColumnMapping:
       provider: mock
       model: "mock"

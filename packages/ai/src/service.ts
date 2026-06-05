@@ -2,10 +2,13 @@ import type { AiConfig, AiTaskName } from "@naxeu/config";
 import {
   categorizationSchema,
   extractedAttachmentSchema,
+  importColumnMappingGuessSchema,
   monthlySummarySchema,
   parsedQuickInputSchema,
+  guessImportColumnMappingFromHeaders,
   type CategorizationResult,
   type ExtractedAttachment,
+  type ImportColumnMappingGuess,
   type MonthlySummary,
   type ParsedQuickInput,
 } from "@naxeu/shared";
@@ -15,6 +18,25 @@ import {
   heuristicParseQuickInput,
 } from "./heuristics.js";
 import { generateValidatedObject, resolveModel } from "./provider.js";
+
+function clampImportColumnGuess(g: ImportColumnMappingGuess, n: number): ImportColumnMappingGuess {
+  if (n <= 0) return { ...g, needsUserConfirmation: true };
+  const c = (i: number) => Math.max(0, Math.min(n - 1, i));
+  const d = c(g.dateColumn);
+  const a = c(g.amountColumn);
+  const desc = c(g.descriptionColumn);
+  const m = g.merchantColumn === null ? null : c(g.merchantColumn);
+  const dupCore = d === a || d === desc || a === desc;
+  const badMerchant = m !== null && (m === d || m === a || m === desc);
+  return {
+    ...g,
+    dateColumn: d,
+    amountColumn: a,
+    descriptionColumn: desc,
+    merchantColumn: badMerchant ? null : m,
+    needsUserConfirmation: g.needsUserConfirmation || dupCore || badMerchant,
+  };
+}
 
 export interface CategorizeInput {
   merchantName?: string | null;
@@ -56,6 +78,48 @@ export class AiService {
     const provider = this.config.ai.providers[taskCfg.provider];
     if (!provider) throw new Error(`Unknown AI provider: ${taskCfg.provider}`);
     return resolveModel(provider, taskCfg.model);
+  }
+
+  /**
+   * Suggests which table columns hold date, amount, description, merchant.
+   * Uses heuristics when AI is off; with a live model, tries structured JSON first.
+   */
+  async guessImportColumnMapping(
+    headers: string[],
+    sampleDataRows: string[][],
+  ): Promise<ImportColumnMappingGuess> {
+    const heuristic = guessImportColumnMappingFromHeaders(headers);
+    if (this.usesMock("importColumnMapping")) {
+      return {
+        dateColumn: heuristic.suggestion.date ?? 0,
+        amountColumn: heuristic.suggestion.amount ?? 0,
+        descriptionColumn: heuristic.suggestion.description ?? 0,
+        merchantColumn: heuristic.suggestion.merchant,
+        confidence: heuristic.confidence,
+        needsUserConfirmation: heuristic.needsUserMapping,
+      };
+    }
+    try {
+      const model = this.resolveTaskModel("importColumnMapping");
+      const headerJson = JSON.stringify(headers);
+      const sampleJson = JSON.stringify(sampleDataRows.slice(0, 10));
+      const raw = await generateValidatedObject(
+        model,
+        importColumnMappingGuessSchema,
+        `CSV/Excel table headers (0..n-1 columns): ${headerJson}\nSample data rows (arrays of cell strings in header order): ${sampleJson}`,
+        "Map banking export columns. dateColumn = booking date. amountColumn = transaction amount (may be signed). descriptionColumn = memo / reference / purpose. merchantColumn = counterparty or payee if clearly separate, else null. Indices are 0-based. Set needsUserConfirmation true if ambiguous or headers are not in German/English.",
+      );
+      return clampImportColumnGuess(raw, headers.length);
+    } catch {
+      return {
+        dateColumn: heuristic.suggestion.date ?? 0,
+        amountColumn: heuristic.suggestion.amount ?? 0,
+        descriptionColumn: heuristic.suggestion.description ?? 0,
+        merchantColumn: heuristic.suggestion.merchant,
+        confidence: heuristic.confidence,
+        needsUserConfirmation: true,
+      };
+    }
   }
 
   async parseQuickTransactionInput(input: string): Promise<ParsedQuickInput> {

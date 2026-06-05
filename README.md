@@ -234,6 +234,7 @@ ai:
     transactionCategorization:{ provider: mock, model: "mock" }
     attachmentExtraction:     { provider: mock, model: "mock" }
     monthlySummary:           { provider: mock, model: "mock" }
+    importColumnMapping:      { provider: mock, model: "mock" }
 ```
 
 Environment overrides (applied after YAML load; see [`.env.example`](./.env.example)):
@@ -245,7 +246,8 @@ into `api` and `worker` when set in `.env`.
 To use a real model: set `OPENAI_API_KEY` (or `ANTHROPIC_API_KEY`) in `.env`,
 set `AI_ENABLED=true` and `AI_DEFAULT_PROVIDER` / task env vars (or flip
 `enabled` and tasks in YAML). `${VAR}` placeholders inside YAML are still
-resolved from the environment. The Vercel AI SDK is used **only** inside
+resolved from the environment; optional `OPENAI_BASE_URL`, `OLLAMA_BASE_URL`,
+and `OLLAMA_API_KEY` are documented in [`config/ai.yml`](./config/ai.yml). The Vercel AI SDK is used **only** inside
 `packages/ai`; business logic never imports it, and all AI output is validated
 with Zod (falling back to heuristics on failure).
 
@@ -315,7 +317,7 @@ from the REST API.
 Auth (`/auth/register|login|me`), transactions (CRUD + `/children` + `/tree`),
 categories, accounts, `/budgets/monthly?month=YYYY-MM`, messages &
 `/message-preferences`, automation rules & runs, attachments (`/analyze`),
-imports (`/imports/csv`), `/settings`, `/branding`, and AI
+imports (`POST /imports/analyze`, `POST /imports/commit` — CSV/TSV/Excel, Spaltenerkennung), `/settings`, `/branding`, and AI
 (`/ai/parse-quick-input`, `/ai/categorize-transaction`, `/ai/extract-attachment`).
 Realtime WebSocket at `ws://host/ws?token=<jwt>`.
 

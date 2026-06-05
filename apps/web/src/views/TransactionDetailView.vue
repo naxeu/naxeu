@@ -362,13 +362,13 @@ watch(id, () => {
 
 <style scoped>
 .border-t {
-  border-top: 1px solid rgba(0, 0, 0, 0.06);
+  border-top: thin solid rgba(var(--v-border-color), var(--v-border-opacity));
 }
 .tree-child-row {
   cursor: pointer;
   border-radius: 4px;
 }
 .tree-child-row:hover {
-  background-color: rgba(0, 0, 0, 0.04);
+  background-color: rgba(var(--v-theme-on-surface), 0.06);
 }
 </style>

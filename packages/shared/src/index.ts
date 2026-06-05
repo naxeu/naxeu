@@ -1,6 +1,7 @@
 export * from "./enums.js";
 export * from "./schemas.js";
 export * from "./realtime.js";
+export * from "./importTabular.js";
 
 /** Shared API auth token payload. */
 export interface AuthTokenPayload {

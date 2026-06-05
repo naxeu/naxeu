@@ -5,22 +5,34 @@ import { formatMoney } from "@/utils/format";
 
 interface Attachment { id: string; fileName: string; status: string; extractedData: Record<string, unknown> }
 
-const file = ref<File[]>([]);
+const file = ref<File | File[] | null>(null);
 const uploading = ref(false);
 const analyzing = ref(false);
 const error = ref("");
 const attachment = ref<Attachment | null>(null);
 const children = ref<Array<{ id: string; description: string | null; amount: string }>>([]);
 
+function chosenFile(): File | null {
+  const v = file.value;
+  if (v == null) return null;
+  if (Array.isArray(v)) return v[0] ?? null;
+  if (v instanceof File) return v;
+  return null;
+}
+
 async function upload(): Promise<void> {
-  if (!file.value[0]) return;
+  const f = chosenFile();
+  if (!f) {
+    error.value = "Bitte zuerst eine Datei auswählen.";
+    return;
+  }
   uploading.value = true;
   error.value = "";
   children.value = [];
   try {
     const fd = new FormData();
     fd.append("kind", "receipt");
-    fd.append("file", file.value[0]);
+    fd.append("file", f);
     const res = await fetch(`${apiBaseUrl()}/attachments`, {
       method: "POST",
       headers: { authorization: `Bearer ${getToken()}` },
@@ -65,8 +77,16 @@ async function analyze(): Promise<void> {
         <v-card rounded="lg" border>
           <v-card-title>Beleg hochladen</v-card-title>
           <v-card-text>
-            <v-file-input v-model="file" label="Datei oder Bild" variant="outlined" prepend-icon="mdi-paperclip" />
-            <v-btn color="primary" :loading="uploading" prepend-icon="mdi-upload" @click="upload">Hochladen</v-btn>
+            <v-file-input v-model="file" label="Datei oder Bild" variant="outlined" prepend-icon="mdi-paperclip" show-size />
+            <v-btn
+              color="primary"
+              :loading="uploading"
+              :disabled="!chosenFile()"
+              prepend-icon="mdi-upload"
+              @click="upload"
+            >
+              Hochladen
+            </v-btn>
 
             <div v-if="attachment" class="mt-4">
               <v-divider class="mb-3" />

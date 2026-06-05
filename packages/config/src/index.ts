@@ -80,6 +80,7 @@ export const aiConfigSchema = z.object({
       transactionCategorization: aiTaskSchema,
       attachmentExtraction: aiTaskSchema,
       monthlySummary: aiTaskSchema,
+      importColumnMapping: aiTaskSchema,
     }),
   }),
 });
@@ -87,12 +88,52 @@ export type AiConfig = z.infer<typeof aiConfigSchema>;
 export type AiProviderConfig = z.infer<typeof aiProviderSchema>;
 export type AiTaskName = keyof AiConfig["ai"]["tasks"];
 
+function cleanEnvString(s: string | undefined): string | undefined {
+  if (s === undefined) return undefined;
+  const t = s.trim();
+  return t === "" ? undefined : t;
+}
+
+/**
+ * After `${VAR}` interpolation, missing env vars become `""`. Treat those as
+ * unset for optional provider fields, and keep stable defaults for the
+ * `local` (Ollama-compatible) provider.
+ */
+function normalizeAiAfterInterpolation(parsed: AiConfig): AiConfig {
+  const providers: Record<string, z.infer<typeof aiProviderSchema>> = {};
+  for (const [id, p] of Object.entries(parsed.ai.providers)) {
+    const apiKey = cleanEnvString(p.apiKey);
+    const baseUrl = cleanEnvString(p.baseUrl);
+
+    if (id === "local" && p.type === "openai-compatible") {
+      providers[id] = {
+        type: "openai-compatible",
+        baseUrl: baseUrl ?? "http://localhost:11434/v1",
+        apiKey: apiKey ?? "local",
+      };
+    } else {
+      providers[id] = {
+        type: p.type,
+        ...(apiKey !== undefined ? { apiKey } : {}),
+        ...(baseUrl !== undefined ? { baseUrl } : {}),
+      };
+    }
+  }
+  return aiConfigSchema.parse({
+    ai: {
+      ...parsed.ai,
+      providers,
+    },
+  });
+}
+
 /** Must match `aiConfigSchema` shape `ai.tasks` keys. */
 const AI_TASK_KEYS = [
   "quickInputParsing",
   "transactionCategorization",
   "attachmentExtraction",
   "monthlySummary",
+  "importColumnMapping",
 ] as const satisfies readonly AiTaskName[];
 
 function camelToUpperSnake(s: string): string {
@@ -116,6 +157,9 @@ function optionalEnvBool(value: string | undefined): boolean | undefined {
  * - `AI_ENABLED` — `true` / `false` / `1` / `0` / `yes` / `no` / `on` / `off`
  * - `AI_DEFAULT_PROVIDER` — provider id (e.g. `openai`, `mock`)
  * - `AI_TASK_<UPPER_SNAKE_TASK>_PROVIDER` / `_MODEL` — e.g. `AI_TASK_QUICK_INPUT_PARSING_MODEL=gpt-4o-mini`
+ *
+ * Provider secrets / endpoints in `ai.yml` use `${VAR}`; see that file and
+ * `.env.example` for `OPENAI_*`, `ANTHROPIC_*`, and `OLLAMA_*` names.
  */
 function applyAiEnvOverrides(parsed: AiConfig): AiConfig {
   const e = process.env;
@@ -201,9 +245,10 @@ let cached: NaxeuConfig | null = null;
 export function loadConfig(dir: string = configDir()): NaxeuConfig {
   if (cached) return cached;
   const aiYaml = aiConfigSchema.parse(loadYamlFile(dir, "ai.yml"));
+  const aiNormalized = normalizeAiAfterInterpolation(aiYaml);
   cached = {
     app: appConfigSchema.parse(loadYamlFile(dir, "app.yml")),
-    ai: applyAiEnvOverrides(aiYaml),
+    ai: applyAiEnvOverrides(aiNormalized),
     branding: brandingSchema.parse(loadYamlFile(dir, "branding.yml")),
   };
   return cached;

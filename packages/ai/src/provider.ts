@@ -15,7 +15,11 @@ export class MockProviderError extends Error {}
 export function resolveModel(provider: AiProviderConfig, model: string): LanguageModel {
   switch (provider.type) {
     case "openai": {
-      const openai = createOpenAI({ apiKey: provider.apiKey });
+      const baseURL = provider.baseUrl?.trim() || undefined;
+      const openai = createOpenAI({
+        apiKey: provider.apiKey,
+        ...(baseURL ? { baseURL } : {}),
+      });
       return openai(model);
     }
     case "openai-compatible": {

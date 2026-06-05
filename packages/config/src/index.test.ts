@@ -25,6 +25,34 @@ describe("loadConfig", () => {
     delete process.env.OPENAI_API_KEY;
   });
 
+  it("drops empty interpolated strings and applies local Ollama defaults", () => {
+    delete process.env.OLLAMA_BASE_URL;
+    delete process.env.OLLAMA_API_KEY;
+    resetConfigCache();
+    const cfg = loadConfig(configDir);
+    expect(cfg.ai.ai.providers.local?.baseUrl).toBe("http://localhost:11434/v1");
+    expect(cfg.ai.ai.providers.local?.apiKey).toBe("local");
+  });
+
+  it("uses OLLAMA_* from the environment for the local provider", () => {
+    process.env.OLLAMA_BASE_URL = "http://ollama:11434/v1";
+    process.env.OLLAMA_API_KEY = "secret";
+    resetConfigCache();
+    const cfg = loadConfig(configDir);
+    expect(cfg.ai.ai.providers.local?.baseUrl).toBe("http://ollama:11434/v1");
+    expect(cfg.ai.ai.providers.local?.apiKey).toBe("secret");
+    delete process.env.OLLAMA_BASE_URL;
+    delete process.env.OLLAMA_API_KEY;
+  });
+
+  it("passes OPENAI_BASE_URL through to the openai provider when set", () => {
+    process.env.OPENAI_BASE_URL = "https://example.com/v1";
+    resetConfigCache();
+    const cfg = loadConfig(configDir);
+    expect(cfg.ai.ai.providers.openai?.baseUrl).toBe("https://example.com/v1");
+    delete process.env.OPENAI_BASE_URL;
+  });
+
   it("overrides ai.enabled and ai.defaultProvider from env", () => {
     process.env.AI_ENABLED = "true";
     process.env.AI_DEFAULT_PROVIDER = "openai";

@@ -269,23 +269,26 @@ describe("credit card + transfer logic", () => {
 
 describe("workspace isolation", () => {
   it("does not leak another workspace's transactions", async () => {
-    // The community edition reuses a single workspace, so a second user joins
-    // the same household. Create a transaction as user B and ensure both see
-    // only their shared workspace data (not arbitrary cross-workspace rows).
     const regB = await app.inject({
       method: "POST",
       url: "/auth/register",
       payload: { email: "userb@naxeu.app", name: "B", password: "password123" },
     });
-    const tokenB = regB.json().token;
+    expect(regB.statusCode).toBe(201);
+    const tokenB = regB.json().token as string;
     const list = await app.inject({
       method: "GET",
       url: "/transactions",
       headers: { authorization: `Bearer ${tokenB}` },
     });
     expect(list.statusCode).toBe(200);
-    // Decode workspace from both tokens — they share one household workspace.
-    const me = await app.inject({ method: "GET", url: "/auth/me", headers: { authorization: `Bearer ${tokenB}` } });
-    expect(me.json().workspaceId).toBeTruthy();
+    const txs = list.json().transactions as unknown[];
+    expect(txs.length).toBe(0);
+
+    const meA = await app.inject({ method: "GET", url: "/auth/me", headers: { authorization: `Bearer ${token}` } });
+    const meB = await app.inject({ method: "GET", url: "/auth/me", headers: { authorization: `Bearer ${tokenB}` } });
+    expect(meA.json().workspaceId).toBeTruthy();
+    expect(meB.json().workspaceId).toBeTruthy();
+    expect(meA.json().workspaceId).not.toBe(meB.json().workspaceId);
   });
 });

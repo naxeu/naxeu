@@ -1,16 +1,17 @@
 # ---------------------------------------------------------------------------
 # Naxeu application configuration (Community Edition).
 #
-# Single-instance / single-household. Exactly one default workspace is created
-# on first boot. There is no multi-tenant SaaS in the community edition.
+# Each self-registered user receives their own workspace (household) so data
+# never mixes between unrelated accounts. Inviting family members into the same
+# workspace is not implemented in CE yet (would share one workspace_id).
 # ---------------------------------------------------------------------------
 edition: community
 
 workspace:
-  # The default household workspace that is auto-created during seeding.
+  # Fallback name pattern for new sign-ups is "{name}'s Haushalt"; seed uses its own label.
   defaultName: "Demo Family"
   defaultType: family
-  # Community edition is locked to a single workspace.
+  # CE does not offer switching or creating additional workspaces in the UI.
   allowMultiple: false
 
 auth:

@@ -8,6 +8,7 @@ import { attachments } from "@naxeu/db/schema";
 import {
   deleteAttachment,
   emitEvent,
+  getTransaction,
   getTransactionTree,
   loadProcessedAttachmentAnalysis,
   markAttachmentAnalysisFailed,
@@ -126,7 +127,49 @@ export async function registerAttachmentRoutes(app: FastifyInstance): Promise<vo
       row.transactionId != null
         ? await getTransactionTree(ctx, row.transactionId, request.auth.workspaceId)
         : null;
-    return { attachment: row, transactionTree };
+
+    const LEDGER_SOURCES = ["import", "manual"] as const;
+    function isLedgerSource(source: string): boolean {
+      return (LEDGER_SOURCES as readonly string[]).includes(source);
+    }
+
+    let linkedLedgerTransaction: {
+      id: string;
+      merchantName: string | null;
+      description: string | null;
+      date: string;
+      amount: string;
+      source: string;
+    } | null = null;
+
+    if (row.status === "processed" && row.transactionId && transactionTree) {
+      const tx = transactionTree.node;
+      if (tx.parentId) {
+        const parent = await getTransaction(ctx, tx.parentId, request.auth.workspaceId);
+        if (parent && isLedgerSource(parent.source)) {
+          linkedLedgerTransaction = {
+            id: parent.id,
+            merchantName: parent.merchantName,
+            description: parent.description,
+            date: typeof parent.date === "string" ? parent.date.slice(0, 10) : String(parent.date).slice(0, 10),
+            amount: parent.amount,
+            source: parent.source,
+          };
+        }
+      }
+      if (!linkedLedgerTransaction && isLedgerSource(tx.source)) {
+        linkedLedgerTransaction = {
+          id: tx.id,
+          merchantName: tx.merchantName,
+          description: tx.description,
+          date: typeof tx.date === "string" ? tx.date.slice(0, 10) : String(tx.date).slice(0, 10),
+          amount: tx.amount,
+          source: tx.source,
+        };
+      }
+    }
+
+    return { attachment: row, transactionTree, linkedLedgerTransaction };
   });
 
   /** Binary file for previews (same auth as API). */

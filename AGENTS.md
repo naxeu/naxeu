@@ -51,7 +51,9 @@ password hashing to avoid one).
 - **Realtime payloads carry no sensitive data** — only `{ type, entityType,
   entityId, workspaceId, timestamp, meta? }`. The PWA refetches details via REST.
 - Every domain row carries `workspace_id` even though the community edition runs
-  one household. Keep it that way (forward-compat with Cloud/Enterprise).
+  one household **per registered account** (each sign-up gets its own workspace;
+  API access is scoped strictly by JWT `workspaceId`). Keep `workspace_id` on rows
+  for forward-compat with Cloud/Enterprise.
 - Validate all API input and AI output with Zod. TypeScript strict mode stays on.
 
 ## Event pipeline

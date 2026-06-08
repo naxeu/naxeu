@@ -4,6 +4,10 @@ import { useRoute, useRouter } from "vue-router";
 import { api } from "@/api/client";
 import { TransactionStatus, TransactionType } from "@naxeu/shared";
 import { formatDate, formatMoney, statusColor } from "@/utils/format";
+import type { TxFlat } from "@/utils/transaction-tree";
+import { rootTransactionMayAttachReceipt } from "@/utils/transaction-tree";
+import AttachmentThumbnail from "@/components/AttachmentThumbnail.vue";
+import ReceiptTransactionEditor from "@/components/ReceiptTransactionEditor.vue";
 
 type TxTypeValue = (typeof TransactionType.values)[number];
 type TxStatusValue = (typeof TransactionStatus.values)[number];
@@ -20,6 +24,7 @@ interface Tx {
   accountId: string | null;
   date: string;
   parentId: string | null;
+  source: string;
   affectsBudget: boolean;
   affectsAccountBalance: boolean;
 }
@@ -35,12 +40,20 @@ interface Account {
   id: string;
   name: string;
 }
+interface LinkedAttachment {
+  id: string;
+  fileName: string;
+  mimeType: string;
+  status: string;
+  receiptTransactionId: string | null;
+}
 
 const route = useRoute();
 const router = useRouter();
 const id = computed(() => String(route.params.id));
 
 const tx = ref<Tx | null>(null);
+const linkedAttachments = ref<LinkedAttachment[]>([]);
 const tree = ref<TreeNode | null>(null);
 const categories = ref<Category[]>([]);
 const accounts = ref<Account[]>([]);
@@ -87,6 +100,45 @@ const txStatuses = [...TransactionStatus.values];
 const catName = (cid: string | null) => categories.value.find((c) => c.id === cid)?.name ?? "–";
 const accName = (aid: string | null) => accounts.value.find((a) => a.id === aid)?.name ?? "–";
 
+const receiptEditorAttachmentId = computed(() => {
+  const tid = id.value;
+  const match = linkedAttachments.value.find((l) => l.receiptTransactionId === tid);
+  return match?.id ?? null;
+});
+
+const linkedAttachmentsDirect = computed(() =>
+  linkedAttachments.value.filter((l) => l.receiptTransactionId === id.value),
+);
+const linkedAttachmentsIndirect = computed(() =>
+  linkedAttachments.value.filter(
+    (l) => l.receiptTransactionId != null && l.receiptTransactionId !== id.value,
+  ),
+);
+const showBelegSection = computed(
+  () => linkedAttachmentsDirect.value.length > 0 || linkedAttachmentsIndirect.value.length > 0,
+);
+
+function detailTreeHasReceiptShell(t: TreeNode | null): boolean {
+  if (!t?.children?.length) return false;
+  for (const c of t.children) {
+    if (c.node.source === "attachment") return true;
+    if (detailTreeHasReceiptShell(c)) return true;
+  }
+  return false;
+}
+
+const showAddReceiptOnDetail = computed(() => {
+  const t = tx.value;
+  if (!t || t.parentId != null) return false;
+  if (!rootTransactionMayAttachReceipt(t as TxFlat)) return false;
+  if (linkedAttachmentsDirect.value.length > 0 || linkedAttachmentsIndirect.value.length > 0) return false;
+  return !detailTreeHasReceiptShell(tree.value);
+});
+
+function goAddReceiptFromDetail(): void {
+  void router.push({ name: "attachments", query: { forTransaction: id.value } });
+}
+
 function syncEditForm(): void {
   const t = tx.value;
   if (!t) return;
@@ -108,15 +160,17 @@ function syncEditForm(): void {
 async function load(): Promise<void> {
   const tid = id.value;
   const [t, tr, c, a] = await Promise.all([
-    api<{ transaction: Tx }>(`/transactions/${tid}`),
+    api<{ transaction: Tx; linkedAttachments?: LinkedAttachment[] }>(`/transactions/${tid}`),
     api<{ tree: TreeNode }>(`/transactions/${tid}/tree`),
     api<{ categories: Category[] }>("/categories"),
     api<{ accounts: Account[] }>("/accounts"),
   ]);
   tx.value = t.transaction;
+  linkedAttachments.value = t.linkedAttachments ?? [];
   tree.value = tr.tree;
   categories.value = c.categories;
   accounts.value = a.accounts;
+  syncEditForm();
 }
 
 function startEdit(): void {
@@ -208,25 +262,79 @@ watch(id, () => {
       <h1 class="text-h4 font-weight-bold ml-2">{{ tx.merchantName ?? "Transaktion" }}</h1>
       <v-spacer />
       <v-btn
-        v-if="!editing"
+        v-if="showAddReceiptOnDetail"
         color="primary"
         variant="tonal"
         class="mr-2"
-        prepend-icon="mdi-pencil"
-        @click="startEdit"
+        prepend-icon="mdi-paperclip"
+        @click="goAddReceiptFromDetail"
       >
-        Bearbeiten
+        Beleg hinzufügen
       </v-btn>
       <v-btn color="error" variant="text" prepend-icon="mdi-delete" @click="remove">Löschen</v-btn>
     </div>
     <v-alert v-if="error" type="error" density="compact" class="mb-3">{{ error }}</v-alert>
 
+    <v-row v-if="showBelegSection" class="mb-2">
+      <v-col cols="12">
+        <v-card rounded="lg" border>
+          <v-card-title>Beleg</v-card-title>
+          <v-card-text>
+            <v-row v-if="linkedAttachmentsDirect.length">
+              <v-col v-for="la in linkedAttachmentsDirect" :key="la.id" cols="12" sm="6" md="4">
+                <v-card variant="outlined" rounded="lg">
+                  <AttachmentThumbnail
+                    :attachment-id="la.id"
+                    :mime-type="la.mimeType"
+                    variant="detail"
+                  />
+                  <v-card-text class="pt-2">
+                    <div class="text-body-2 text-truncate" :title="la.fileName">{{ la.fileName }}</div>
+                    <v-chip size="x-small" class="mt-1" :color="la.status === 'processed' ? 'success' : la.status === 'failed' ? 'error' : 'info'">
+                      {{ la.status }}
+                    </v-chip>
+                  </v-card-text>
+                </v-card>
+              </v-col>
+            </v-row>
+            <div
+              v-if="linkedAttachmentsIndirect.length"
+              class="d-flex flex-wrap ga-2"
+              :class="linkedAttachmentsDirect.length ? 'mt-4' : ''"
+            >
+              <template v-for="la in linkedAttachmentsIndirect" :key="`${la.id}-ind`">
+                <v-btn
+                  v-if="la.receiptTransactionId"
+                  color="primary"
+                  variant="tonal"
+                  prepend-icon="mdi-paperclip"
+                  :to="{ name: 'transaction-detail', params: { id: la.receiptTransactionId } }"
+                >
+                  Beleg anzeigen
+                </v-btn>
+              </template>
+            </div>
+          </v-card-text>
+        </v-card>
+      </v-col>
+    </v-row>
+
     <v-row>
       <v-col cols="12" md="5">
         <v-card rounded="lg" border>
-          <v-card-title class="d-flex align-center">
+          <v-card-title class="d-flex align-center flex-wrap ga-2">
             <span>{{ editing ? "Bearbeiten" : "Details" }}</span>
             <v-spacer />
+            <v-btn
+              v-if="!editing"
+              color="primary"
+              variant="tonal"
+              size="small"
+              prepend-icon="mdi-pencil"
+              @click="startEdit"
+            >
+              Bearbeiten
+            </v-btn>
             <template v-if="editing">
               <v-btn size="small" variant="text" @click="cancelEdit">Abbrechen</v-btn>
               <v-btn size="small" color="primary" :loading="saving" @click="saveEdit">Speichern</v-btn>
@@ -313,7 +421,13 @@ watch(id, () => {
       </v-col>
 
       <v-col cols="12" md="7">
-        <v-card rounded="lg" border>
+        <ReceiptTransactionEditor
+          v-if="receiptEditorAttachmentId"
+          :key="receiptEditorAttachmentId"
+          :attachment-id="receiptEditorAttachmentId"
+          @updated="load"
+        />
+        <v-card v-else rounded="lg" border>
           <v-card-title class="d-flex align-center">
             Transaktionsbaum
             <v-spacer />

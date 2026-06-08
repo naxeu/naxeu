@@ -25,18 +25,17 @@ export async function registerAuthRoutes(app: FastifyInstance): Promise<void> {
       .values({ email: input.email, name: input.name, passwordHash: await hashPassword(input.password) })
       .returning();
 
-    // Community edition: single household. Reuse the default workspace if one
-    // exists, otherwise create it and make this user the owner.
-    let [workspace] = await db.select().from(workspaces).limit(1);
-    let role = "member";
-    if (!workspace) {
-      [workspace] = await db
-        .insert(workspaces)
-        .values({ name: appConfig.workspace.defaultName, type: appConfig.workspace.defaultType })
-        .returning();
-      role = "owner";
-    }
-    await db.insert(workspaceMembers).values({ workspaceId: workspace!.id, userId: user!.id, role });
+    const householdName = `${input.name}'s Haushalt`.slice(0, 160);
+    const [workspace] = await db
+      .insert(workspaces)
+      .values({ name: householdName, type: appConfig.workspace.defaultType })
+      .returning();
+
+    await db.insert(workspaceMembers).values({
+      workspaceId: workspace!.id,
+      userId: user!.id,
+      role: "owner",
+    });
 
     const token = app.jwt.sign(
       { userId: user!.id, workspaceId: workspace!.id, email: user!.email },

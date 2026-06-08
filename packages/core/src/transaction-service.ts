@@ -1,5 +1,5 @@
 import { and, desc, eq, ilike, gte, inArray, isNull, lte, or } from "drizzle-orm";
-import { transactions } from "@naxeu/db/schema";
+import { attachments, transactions } from "@naxeu/db/schema";
 import type { CreateTransactionInput, TransactionQuery, UpdateTransactionInput } from "@naxeu/shared";
 import type { ServiceContext } from "./context.js";
 import { emitEvent } from "./events.js";
@@ -222,11 +222,33 @@ export async function listTransactions(
     );
     if (searchCond) conditions.push(searchCond);
   }
-  return ctx.db
+  const rows = await ctx.db
     .select()
     .from(transactions)
     .where(and(...conditions))
     .orderBy(desc(transactions.date), desc(transactions.createdAt))
     .limit(query.limit)
     .offset(query.offset);
+  if (rows.length === 0) return rows;
+
+  const txIds = rows.map((r) => r.id);
+  const attRows = await ctx.db
+    .select({
+      id: attachments.id,
+      mimeType: attachments.mimeType,
+      transactionId: attachments.transactionId,
+    })
+    .from(attachments)
+    .where(and(eq(attachments.workspaceId, workspaceId), inArray(attachments.transactionId, txIds)));
+
+  const firstByTx = new Map<string, { id: string; mimeType: string }>();
+  for (const a of attRows) {
+    if (!a.transactionId) continue;
+    if (!firstByTx.has(a.transactionId)) firstByTx.set(a.transactionId, { id: a.id, mimeType: a.mimeType });
+  }
+
+  return rows.map((t) => ({
+    ...t,
+    receiptAttachment: firstByTx.get(t.id) ?? null,
+  }));
 }

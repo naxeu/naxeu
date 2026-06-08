@@ -167,6 +167,7 @@ function onPerPageChange(): void {
               <th class="text-left">Händler / Beschreibung</th>
               <th class="text-left" style="width: 10rem">Kategorie</th>
               <th class="text-left" style="width: 8rem">Status</th>
+              <th class="text-end" style="width: 9.5rem"></th>
               <th class="text-end" style="width: 8rem">Betrag</th>
             </tr>
           </thead>
@@ -183,7 +184,7 @@ function onPerPageChange(): void {
           </tbody>
           <tfoot>
             <tr class="tx-tree-foot text-body-2">
-              <td colspan="4" class="text-medium-emphasis py-3">
+              <td colspan="5" class="text-medium-emphasis py-3">
                 Zwischensumme nur <strong>Wurzeln</strong> auf dieser Seite (Kinderzeilen nicht addiert, um Doppelzählung zu vermeiden).
               </td>
               <td class="text-end font-weight-bold py-3">

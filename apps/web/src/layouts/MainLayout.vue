@@ -149,7 +149,7 @@ watch(
   <v-snackbar v-model="receiptSnackbar" :timeout="12_000" color="surface-variant" location="bottom">
     <span class="text-body-2">Beleganalyse abgeschlossen.</span>
     <template #actions>
-      <v-btn color="primary" variant="text" @click="openReceiptSnackbar">Zum Beleg</v-btn>
+      <v-btn color="primary" variant="text" @click="openReceiptSnackbar">Zur Belegansicht</v-btn>
       <v-btn variant="text" @click="receiptSnackbar = false">Schließen</v-btn>
     </template>
   </v-snackbar>

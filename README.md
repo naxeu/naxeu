@@ -122,6 +122,9 @@ The seed creates the **Demo Family** workspace, three accounts (Bankkonto,
 Kreditkarte, Bargeld), budget categories, and example transactions including a
 credit-card statement and a Despar receipt with sub-transactions.
 
+Additional accounts created via **Register** each receive a **separate workspace**
+so finance data never mixes between unrelated users on the same instance.
+
 ### Optional delivery (Web Push & SMTP)
 
 Message delivery uses mock transports unless you configure **VAPID** keys (Web

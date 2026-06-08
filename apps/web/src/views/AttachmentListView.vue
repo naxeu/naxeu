@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from "vue";
-import { useRouter } from "vue-router";
+import { useRoute, useRouter } from "vue-router";
 import { apiBaseUrl, api, getToken } from "@/api/client";
 import { useRealtimeStore } from "@/stores/realtime";
 import { formatDate } from "@/utils/format";
@@ -15,7 +15,13 @@ interface AttachmentRow {
 }
 
 const router = useRouter();
+const route = useRoute();
 const realtime = useRealtimeStore();
+
+const forTransactionId = computed((): string | null => {
+  const q = route.query.forTransaction;
+  return typeof q === "string" && q.length > 0 ? q : null;
+});
 
 const list = ref<AttachmentRow[]>([]);
 const error = ref("");
@@ -65,6 +71,8 @@ async function postFile(file: File): Promise<void> {
     const fd = new FormData();
     fd.append("kind", "receipt");
     fd.append("file", file);
+    const linkId = forTransactionId.value;
+    if (linkId) fd.append("transactionId", linkId);
     const res = await fetch(`${apiBaseUrl()}/attachments`, {
       method: "POST",
       headers: { authorization: `Bearer ${getToken()}` },
@@ -73,7 +81,11 @@ async function postFile(file: File): Promise<void> {
     const data = await res.json();
     if (!res.ok) throw new Error(data.message ?? "Upload fehlgeschlagen");
     await loadList();
-    await router.push({ name: "attachment-detail", params: { id: data.attachment.id } });
+    if (linkId) {
+      await router.replace({ name: "transaction-detail", params: { id: linkId } });
+    } else {
+      await router.push({ name: "attachment-detail", params: { id: data.attachment.id } });
+    }
   } catch (e) {
     error.value = e instanceof Error ? e.message : "Fehler";
   } finally {
@@ -129,9 +141,13 @@ async function confirmDeleteAttachment(): Promise<void> {
 <template>
   <div>
     <h1 class="text-h4 font-weight-bold mb-4">Belege</h1>
+    <v-alert v-if="forTransactionId" type="info" variant="tonal" density="compact" class="mb-4">
+      Der Beleg wird nach dem Upload mit der gewählten Buchung verknüpft (Analyse im Hintergrund).
+    </v-alert>
     <p class="text-body-2 text-medium-emphasis mb-4">
-      Nach dem Upload startet die Analyse automatisch (Hintergrund-Job). Wenn sie fertig ist, erhältst du eine Nachricht
-      mit Link zu diesem Beleg.
+      Nach dem Upload startet die Analyse automatisch im Hintergrund. Wenn sie fertig ist, erhältst du eine Nachricht.
+      In der Belegansicht (Klick auf die Kachel) siehst du Vorschau und erkannte Felder; zum Bearbeiten der Buchung und
+      der Belegpositionen nutzt du dort den Button zur Transaktionsansicht.
     </p>
 
     <v-alert v-if="error" type="error" density="compact" class="mb-4">{{ error }}</v-alert>
@@ -200,8 +216,8 @@ async function confirmDeleteAttachment(): Promise<void> {
       <v-card v-if="deleteTarget" variant="elevated" color="surface" rounded="lg" elevation="8">
         <v-card-title>Beleg löschen?</v-card-title>
         <v-card-text class="text-body-2">
-          Der Beleg wird unwiderruflich gelöscht. Alle zugehörigen Transaktionen (Beleg-Container und Positionen) werden
-          mit entfernt.
+          Die Belegdatei und der Eintrag in dieser Liste werden entfernt. Bereits angelegte Buchungen aus diesem Beleg
+          werden mit allen Positionen ausgeblendet (soft-delete) und erscheinen nicht mehr in den Standard-Ansichten.
         </v-card-text>
         <v-card-actions>
           <v-spacer />

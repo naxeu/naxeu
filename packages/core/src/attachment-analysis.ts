@@ -6,8 +6,9 @@ import { attachments, categories, transactions } from "@naxeu/db/schema";
 import { createTransactionSchema } from "@naxeu/shared";
 import type { AttachmentExtractionSource } from "@naxeu/ai";
 import { heuristicCategorize } from "@naxeu/ai";
-import { createTransaction } from "./transaction-service.js";
+import { createTransaction, transactionIsLive } from "./transaction-service.js";
 import type { ServiceContext } from "./context.js";
+import { formatReceiptShellDescription, formatReceiptShellMerchantName } from "./receipt-shell-labels.js";
 import { sniffImageMime } from "./image-sniff.js";
 
 function resolveLineItemCategoryId(
@@ -79,7 +80,13 @@ async function loadChildrenByParent(
   return ctx.db
     .select()
     .from(transactions)
-    .where(and(eq(transactions.workspaceId, workspaceId), eq(transactions.parentId, parentId)));
+    .where(
+      and(
+        eq(transactions.workspaceId, workspaceId),
+        eq(transactions.parentId, parentId),
+        transactionIsLive,
+      ),
+    );
 }
 
 /**
@@ -176,8 +183,8 @@ export async function runAttachmentAnalysis(
         date: extracted.date ?? new Date().toISOString().slice(0, 10),
         amount: extracted.total ?? "0",
         currency: extracted.currency,
-        merchantName: extracted.merchantName,
-        description: `Beleg ${row.fileName}`,
+        merchantName: formatReceiptShellMerchantName(row.fileName, extracted.merchantName),
+        description: formatReceiptShellDescription(row.fileName),
         source: "attachment",
         affectsAccountBalance: true,
         affectsBudget: false,

@@ -9,6 +9,9 @@ import {
   runAttachmentAnalysis,
   runAutomationsForTransaction,
   tryClaimAttachmentForAnalysis,
+  tryMergeImportTransactionWithMatchingReceipt,
+  tryMergeReceiptWithMatchingImport,
+  transactionIsLive,
   type ServiceContext,
 } from "@naxeu/core";
 import { toMonthKey, type EventStatus } from "@naxeu/shared";
@@ -63,12 +66,32 @@ export async function processEvent(
         .select()
         .from(transactions)
         .where(
-          and(eq(transactions.id, payload.transactionId), eq(transactions.workspaceId, event.workspaceId)),
+          and(
+            eq(transactions.id, payload.transactionId),
+            eq(transactions.workspaceId, event.workspaceId),
+            transactionIsLive,
+          ),
         )
         .limit(1);
       if (tx) {
         const month = tx.date.slice(0, 7) || toMonthKey(new Date());
         await checkBudgetThresholds(ctx, event.workspaceId, userId, month);
+
+        if (
+          event.type === "transaction.created" &&
+          tx.type === "expense" &&
+          (tx.source === "manual" || tx.source === "import") &&
+          !tx.parentId
+        ) {
+          try {
+            await tryMergeImportTransactionWithMatchingReceipt(ctx, {
+              workspaceId: event.workspaceId,
+              importTransactionId: payload.transactionId,
+            });
+          } catch {
+            /* best-effort */
+          }
+        }
       }
       break;
     }
@@ -119,6 +142,15 @@ export async function processEvent(
             actionLabel: "Beleg öffnen",
             actionUrl: `/attachments/${attachmentId}`,
           });
+        }
+
+        try {
+          await tryMergeReceiptWithMatchingImport(ctx, {
+            workspaceId: event.workspaceId,
+            attachmentId,
+          });
+        } catch {
+          /* merge is best-effort; analysis already succeeded */
         }
       } catch (err) {
         await markAttachmentAnalysisFailed(ctx, attachmentId, event.workspaceId);

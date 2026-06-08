@@ -14,4 +14,6 @@ export * from "./automation-service.js";
 export * from "./attachment-analysis.js";
 export * from "./attachment-delete.js";
 export * from "./attachment-extracted-update.js";
+export * from "./receipt-import-merge.js";
+export * from "./receipt-shell-labels.js";
 export { sniffImageMime } from "./image-sniff.js";

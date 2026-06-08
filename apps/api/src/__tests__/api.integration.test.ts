@@ -167,6 +167,51 @@ describe("categories, transactions and budgets", () => {
     // 90 (standalone) + 30 (child) = 120; the 450 parent must NOT be counted.
     expect(food.spent).toBe("120.00");
   });
+
+  it("soft-deletes a parent and all live descendants from budgets and GET", async () => {
+    const parent = await app.inject({
+      method: "POST",
+      url: "/transactions",
+      headers: auth(),
+      payload: {
+        type: "expense",
+        amount: "200",
+        date: "2026-06-12",
+        merchantName: "SoftDeleteParent",
+        affectsAccountBalance: true,
+        affectsBudget: false,
+      },
+    });
+    expect(parent.statusCode).toBe(201);
+    const pid = parent.json().transaction.id;
+    await app.inject({
+      method: "POST",
+      url: `/transactions/${pid}/children`,
+      headers: auth(),
+      payload: {
+        type: "item",
+        amount: "50",
+        date: "2026-06-12",
+        categoryId,
+        affectsAccountBalance: false,
+        affectsBudget: true,
+      },
+    });
+
+    let budget = await app.inject({ method: "GET", url: "/budgets/monthly?month=2026-06", headers: auth() });
+    let food = budget.json().categories.find((c: { categoryId: string }) => c.categoryId === categoryId);
+    expect(food.spent).toBe("170.00");
+
+    const del = await app.inject({ method: "DELETE", url: `/transactions/${pid}`, headers: auth() });
+    expect(del.statusCode).toBe(200);
+
+    const get = await app.inject({ method: "GET", url: `/transactions/${pid}`, headers: auth() });
+    expect(get.statusCode).toBe(404);
+
+    budget = await app.inject({ method: "GET", url: "/budgets/monthly?month=2026-06", headers: auth() });
+    food = budget.json().categories.find((c: { categoryId: string }) => c.categoryId === categoryId);
+    expect(food.spent).toBe("120.00");
+  });
 });
 
 describe("credit card + transfer logic", () => {

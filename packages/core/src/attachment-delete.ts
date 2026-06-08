@@ -1,13 +1,13 @@
 import { unlink } from "node:fs/promises";
 import { relative, resolve, sep } from "node:path";
 import { and, eq } from "drizzle-orm";
-import { attachments, transactions } from "@naxeu/db/schema";
+import { attachments } from "@naxeu/db/schema";
 import type { ServiceContext } from "./context.js";
 import { deleteTransaction } from "./transaction-service.js";
 
 /**
  * Deletes an attachment row, its storage file, and (when linked) the parent receipt
- * transaction plus all child line-item transactions.
+ * transaction plus all child line-item transactions (soft-delete cascade).
  */
 export async function deleteAttachment(
   ctx: ServiceContext,
@@ -31,13 +31,6 @@ export async function deleteAttachment(
 
   const parentTxId = row.transactionId;
   if (parentTxId) {
-    const children = await ctx.db
-      .select({ id: transactions.id })
-      .from(transactions)
-      .where(and(eq(transactions.workspaceId, workspaceId), eq(transactions.parentId, parentTxId)));
-    for (const c of children) {
-      await deleteTransaction(ctx, c.id, workspaceId);
-    }
     await deleteTransaction(ctx, parentTxId, workspaceId);
   }
 

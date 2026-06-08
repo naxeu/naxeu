@@ -1,10 +1,12 @@
 import { and, desc, eq, ilike, gte, inArray, isNull, lte, or } from "drizzle-orm";
-import type { Database } from "@naxeu/db";
 import { transactions } from "@naxeu/db/schema";
 import type { CreateTransactionInput, TransactionQuery, UpdateTransactionInput } from "@naxeu/shared";
 import type { ServiceContext } from "./context.js";
 import { emitEvent } from "./events.js";
 import { normalizeSignedAmount, buildTransactionTree } from "./transaction-logic.js";
+
+/** SQL fragment: exclude soft-deleted transactions from queries. */
+export const transactionIsLive = isNull(transactions.deletedAt);
 
 export interface CreateTxOptions {
   workspaceId: string;
@@ -96,7 +98,7 @@ export async function updateTransaction(
   const [row] = await ctx.db
     .update(transactions)
     .set(patch)
-    .where(and(eq(transactions.id, id), eq(transactions.workspaceId, workspaceId)))
+    .where(and(eq(transactions.id, id), eq(transactions.workspaceId, workspaceId), transactionIsLive))
     .returning();
   if (!row) return null;
 
@@ -119,26 +121,56 @@ export async function updateTransaction(
 }
 
 export async function deleteTransaction(ctx: ServiceContext, id: string, workspaceId: string) {
-  const [row] = await ctx.db
-    .delete(transactions)
-    .where(and(eq(transactions.id, id), eq(transactions.workspaceId, workspaceId)))
-    .returning();
-  if (!row) return null;
-  await ctx.realtime.publish({
-    type: "transaction.deleted",
-    entityType: "transaction",
-    entityId: id,
-    workspaceId,
-    timestamp: new Date().toISOString(),
-  });
-  return row;
+  const now = new Date();
+
+  const [root] = await ctx.db
+    .select()
+    .from(transactions)
+    .where(and(eq(transactions.id, id), eq(transactions.workspaceId, workspaceId), transactionIsLive))
+    .limit(1);
+  if (!root) return null;
+
+  const ids = new Set<string>();
+  let frontier: string[] = [id];
+  ids.add(id);
+  while (frontier.length > 0) {
+    const rows = await ctx.db
+      .select({ id: transactions.id })
+      .from(transactions)
+      .where(and(eq(transactions.workspaceId, workspaceId), inArray(transactions.parentId, frontier)));
+    const next: string[] = [];
+    for (const r of rows) {
+      if (!ids.has(r.id)) {
+        ids.add(r.id);
+        next.push(r.id);
+      }
+    }
+    frontier = next;
+  }
+
+  await ctx.db
+    .update(transactions)
+    .set({ deletedAt: now, updatedAt: now })
+    .where(and(eq(transactions.workspaceId, workspaceId), inArray(transactions.id, [...ids])));
+
+  for (const tid of ids) {
+    await ctx.realtime.publish({
+      type: "transaction.deleted",
+      entityType: "transaction",
+      entityId: tid,
+      workspaceId,
+      timestamp: now.toISOString(),
+    });
+  }
+
+  return root;
 }
 
 export async function getTransaction(ctx: ServiceContext, id: string, workspaceId: string) {
   const [row] = await ctx.db
     .select()
     .from(transactions)
-    .where(and(eq(transactions.id, id), eq(transactions.workspaceId, workspaceId)))
+    .where(and(eq(transactions.id, id), eq(transactions.workspaceId, workspaceId), transactionIsLive))
     .limit(1);
   return row ?? null;
 }
@@ -154,7 +186,13 @@ export async function getTransactionTree(ctx: ServiceContext, id: string, worksp
     const children = await ctx.db
       .select()
       .from(transactions)
-      .where(and(eq(transactions.workspaceId, workspaceId), inArray(transactions.parentId, frontier)));
+      .where(
+        and(
+          eq(transactions.workspaceId, workspaceId),
+          inArray(transactions.parentId, frontier),
+          transactionIsLive,
+        ),
+      );
     if (children.length === 0) break;
     collected.push(...children);
     frontier = children.map((c) => c.id);
@@ -168,7 +206,7 @@ export async function listTransactions(
   workspaceId: string,
   query: TransactionQuery,
 ) {
-  const conditions = [eq(transactions.workspaceId, workspaceId)];
+  const conditions = [eq(transactions.workspaceId, workspaceId), transactionIsLive];
   if (query.categoryId) conditions.push(eq(transactions.categoryId, query.categoryId));
   if (query.accountId) conditions.push(eq(transactions.accountId, query.accountId));
   if (query.status) conditions.push(eq(transactions.status, query.status));

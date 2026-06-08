@@ -3,6 +3,7 @@ import { categories as categoriesTable, messages, transactions } from "@naxeu/db
 import type { ServiceContext } from "./context.js";
 import { computeMonthlyBudgets, type MonthlyBudgetResult } from "./budget.js";
 import { createMessage } from "./message-service.js";
+import { transactionIsLive } from "./transaction-service.js";
 
 /** Returns [firstDay, firstDayOfNextMonth] as YYYY-MM-DD strings. */
 export function monthBounds(month: string): [string, string] {
@@ -36,6 +37,7 @@ export async function computeWorkspaceMonthlyBudgets(
         eq(transactions.workspaceId, workspaceId),
         gte(transactions.date, start),
         lt(transactions.date, end),
+        transactionIsLive,
       ),
     );
 

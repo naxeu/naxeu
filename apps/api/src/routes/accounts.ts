@@ -1,7 +1,7 @@
-import { asc, eq } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 import type { FastifyInstance } from "fastify";
 import { accounts, transactions } from "@naxeu/db/schema";
-import { computeAccountBalances } from "@naxeu/core";
+import { computeAccountBalances, transactionIsLive } from "@naxeu/core";
 import { createAccountSchema } from "@naxeu/shared";
 
 export async function registerAccountRoutes(app: FastifyInstance): Promise<void> {
@@ -19,7 +19,7 @@ export async function registerAccountRoutes(app: FastifyInstance): Promise<void>
     const txs = await db
       .select()
       .from(transactions)
-      .where(eq(transactions.workspaceId, request.auth.workspaceId));
+      .where(and(eq(transactions.workspaceId, request.auth.workspaceId), transactionIsLive));
     const balances = computeAccountBalances(
       txs.map((t) => ({
         id: t.id,

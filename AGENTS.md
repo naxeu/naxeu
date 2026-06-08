@@ -40,6 +40,9 @@ password hashing to avoid one).
 - **Parent/child transactions must never be double-counted.** Budget vs. account
   inclusion is governed by `affects_budget` / `affects_account_balance`. See
   `packages/core/src/transaction-logic.ts` and its tests.
+- **`DELETE /transactions/:id` is a soft-delete:** sets `transactions.deleted_at`
+  on the row and **all descendants** (BFS by `parent_id`). Lists, balances,
+  budgets, merges, and automations use `transactionIsLive` (`deleted_at IS NULL`).
 - **Transfers** (`type = transfer`) use `account_id` (source) + `counter_account_id`
   (destination); they affect account balances but are forced to `affects_budget =
   false` so a credit-card payoff is never re-counted as spend. Credit-card
@@ -67,6 +70,16 @@ via `packages/core/src/attachment-analysis.ts`), reads bytes from **`STORAGE_DIR
 line-item children, sets `attachments.status` to `processed`, and sends a
 `receipt` in-app message with `actionUrl` `/attachments/:id`. On failure the
 attachment is marked `failed` and an error message may be sent.
+
+After analysis, **receipt ↔ ledger merge** (`packages/core/src/receipt-import-merge.ts`):
+if a matching `source: import` **or** `source: manual` root expense exists (amount ±2 ct, date ±4 days,
+same currency, unique best match), the receipt **shell** becomes a **child** of that row
+(`parent_id`), with `affects_account_balance` / `affects_budget` cleared on the shell so only
+the ledger row hits the balance; line items stay under the shell. `attachments.transaction_id`
+remains the shell id. The ledger row gets `affects_budget: false` so budget stays on the receipt
+line items. The merge also runs when new import rows are committed (`POST /imports/commit`), when
+a root expense is created via `POST /transactions`, and from the worker on `transaction.created`
+for those sources.
 
 When an automation mutates a transaction, write the change directly (no new
 domain event) to avoid loops.

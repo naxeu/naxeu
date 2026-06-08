@@ -13,6 +13,7 @@ import {
   markAttachmentAnalysisFailed,
   runAttachmentAnalysis,
   tryClaimAttachmentForAnalysis,
+  tryMergeReceiptWithMatchingImport,
   updateAttachmentExtractedData,
 } from "@naxeu/core";
 import { patchAttachmentExtractedSchema } from "@naxeu/shared";
@@ -182,6 +183,11 @@ export async function registerAttachmentRoutes(app: FastifyInstance): Promise<vo
         workspaceId: ws,
         userId,
       });
+      try {
+        await tryMergeReceiptWithMatchingImport(ctx, { workspaceId: ws, attachmentId: id });
+      } catch {
+        /* best-effort merge after manual analyze */
+      }
       return {
         attachment: result.attachment,
         parentId: result.parentId,

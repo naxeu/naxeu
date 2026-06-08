@@ -15,6 +15,13 @@
       "when": 1780578737254,
       "tag": "0001_worthless_kang",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1780902864765,
+      "tag": "0002_transactions_soft_delete",
+      "breakpoints": true
     }
   ]
 }

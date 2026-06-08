@@ -134,6 +134,9 @@ export const transactions = pgTable("transactions", {
   aiData: jsonb("ai_data").default(sql`'{}'::jsonb`).notNull(),
   metadata: jsonb("metadata").default(sql`'{}'::jsonb`).notNull(),
 
+  /** Soft-delete: when set, the row is excluded from lists, balances, and merges. */
+  deletedAt: timestamp("deleted_at", { withTimezone: true }),
+
   createdAt: now(),
   updatedAt: updated(),
 });

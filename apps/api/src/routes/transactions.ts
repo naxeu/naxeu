@@ -5,6 +5,7 @@ import {
   getTransaction,
   getTransactionTree,
   listTransactions,
+  tryMergeImportTransactionWithMatchingReceipt,
   updateTransaction,
 } from "@naxeu/core";
 import {
@@ -28,6 +29,16 @@ export async function registerTransactionRoutes(app: FastifyInstance): Promise<v
       workspaceId: request.auth.workspaceId,
       userId: request.auth.userId,
     });
+    if (tx.type === "expense" && (tx.source === "manual" || tx.source === "import") && !tx.parentId) {
+      try {
+        await tryMergeImportTransactionWithMatchingReceipt(ctx, {
+          workspaceId: request.auth.workspaceId,
+          importTransactionId: tx.id,
+        });
+      } catch {
+        /* best-effort */
+      }
+    }
     return reply.code(201).send({ transaction: tx });
   });
 

@@ -4,6 +4,7 @@ import type { AutomationAction } from "@naxeu/shared";
 import type { ServiceContext } from "./context.js";
 import { selectMatchingRules, type AutomationRuleLike } from "./automation.js";
 import { createMessage } from "./message-service.js";
+import { transactionIsLive } from "./transaction-service.js";
 
 export interface RunAutomationArgs {
   workspaceId: string;
@@ -24,7 +25,13 @@ export async function runAutomationsForTransaction(ctx: ServiceContext, args: Ru
   const [tx] = await ctx.db
     .select()
     .from(transactions)
-    .where(and(eq(transactions.id, args.transactionId), eq(transactions.workspaceId, args.workspaceId)))
+    .where(
+      and(
+        eq(transactions.id, args.transactionId),
+        eq(transactions.workspaceId, args.workspaceId),
+        transactionIsLive,
+      ),
+    )
     .limit(1);
   if (!tx) return { applied: 0 };
 
@@ -116,7 +123,7 @@ export async function runAutomationsForTransaction(ctx: ServiceContext, args: Ru
     await ctx.db
       .update(transactions)
       .set({ ...txPatch, updatedAt: new Date() })
-      .where(eq(transactions.id, tx.id));
+      .where(and(eq(transactions.id, tx.id), transactionIsLive));
     await ctx.realtime.publish({
       type: "transaction.updated",
       entityType: "transaction",

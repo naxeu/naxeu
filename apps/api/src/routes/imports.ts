@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { and, desc, eq } from "drizzle-orm";
 import type { FastifyInstance, FastifyRequest } from "fastify";
 import { imports, transactions } from "@naxeu/db/schema";
-import { createTransaction } from "@naxeu/core";
+import { createTransaction, transactionIsLive, tryMergeImportTransactionWithMatchingReceipt } from "@naxeu/core";
 import {
   createTransactionSchema,
   guessImportColumnMappingFromHeaders,
@@ -283,7 +283,11 @@ export async function registerImportRoutes(app: FastifyInstance): Promise<void> 
         .select({ id: transactions.id })
         .from(transactions)
         .where(
-          and(eq(transactions.workspaceId, request.auth.workspaceId), eq(transactions.externalId, externalId)),
+          and(
+            eq(transactions.workspaceId, request.auth.workspaceId),
+            eq(transactions.externalId, externalId),
+            transactionIsLive,
+          ),
         )
         .limit(1);
       if (dupe) {
@@ -302,7 +306,7 @@ export async function registerImportRoutes(app: FastifyInstance): Promise<void> 
       const type = amountNum >= 0 ? "income" : "expense";
 
       try {
-        await createTransaction(
+        const created = await createTransaction(
           ctx,
           createTransactionSchema.parse({
             accountId,
@@ -318,6 +322,16 @@ export async function registerImportRoutes(app: FastifyInstance): Promise<void> 
           { workspaceId: request.auth.workspaceId, userId: request.auth.userId, skipEvent: true },
         );
         imported += 1;
+        if (type === "expense") {
+          try {
+            await tryMergeImportTransactionWithMatchingReceipt(ctx, {
+              workspaceId: request.auth.workspaceId,
+              importTransactionId: created.id,
+            });
+          } catch {
+            /* best-effort: import row stays valid without merge */
+          }
+        }
       } catch {
         skipped += 1;
       }
